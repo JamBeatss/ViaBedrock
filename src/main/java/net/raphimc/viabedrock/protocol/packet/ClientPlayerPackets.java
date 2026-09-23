@@ -274,6 +274,14 @@ public class ClientPlayerPackets {
 
             switch (action) {
                 case PERFORM_RESPAWN -> {
+                    final GameSessionStorage gameSession = wrapper.user().get(GameSessionStorage.class);
+                    if (gameSession.isShowingCredits()) { // The Java client finished the End credits: Bedrock expects a finished credits reply, not a respawn
+                        gameSession.setShowingCredits(false);
+                        wrapper.setPacketType(ServerboundBedrockPackets.SHOW_CREDITS);
+                        wrapper.write(BedrockTypes.UNSIGNED_VAR_LONG, clientPlayer.runtimeId()); // player runtime id
+                        wrapper.write(BedrockTypes.VAR_INT, ShowCreditsPacketPayload_CreditsState.Finished.getValue()); // credits state
+                        return;
+                    }
                     wrapper.write(BedrockTypes.POSITION_3F, Position3f.ZERO); // position
                     wrapper.write(Types.BYTE, (byte) PlayerRespawnState.ClientReadyToSpawn.getValue()); // state
                     wrapper.write(BedrockTypes.UNSIGNED_VAR_LONG, clientPlayer.runtimeId()); // entity runtime id

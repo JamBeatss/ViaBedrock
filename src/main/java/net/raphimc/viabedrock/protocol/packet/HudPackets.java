@@ -37,6 +37,7 @@ import net.raphimc.viabedrock.protocol.BedrockProtocol;
 import net.raphimc.viabedrock.protocol.ClientboundBedrockPackets;
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.IdentityDefinition_Type;
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.*;
+import net.raphimc.viabedrock.protocol.data.enums.java.GameEventType;
 import net.raphimc.viabedrock.protocol.data.enums.java.ObjectiveAction;
 import net.raphimc.viabedrock.protocol.data.enums.java.generated.BossEventOperationType;
 import net.raphimc.viabedrock.protocol.data.enums.java.generated.CustomChatCompletionsAction;
@@ -159,6 +160,25 @@ public class HudPackets {
 
                 PacketFactory.sendJavaCustomChatCompletions(wrapper.user(), CustomChatCompletionsAction.ADD, names.toArray(new String[0]));
             }
+        });
+        protocol.registerClientbound(ClientboundBedrockPackets.TOAST_REQUEST, ClientboundPackets26_1.SET_ACTION_BAR_TEXT, wrapper -> {
+            // Java Edition has no generic toast, the action bar is the closest non-intrusive place
+            final Function<String, String> translator = wrapper.user().get(ResourcePackStorage.class).getTexts().lookup();
+            final String title = BedrockTranslator.translate(wrapper.read(BedrockTypes.STRING), translator, new Object[0]); // title
+            final String content = BedrockTranslator.translate(wrapper.read(BedrockTypes.STRING), translator, new Object[0]); // content
+            final String text = title.isEmpty() ? content : content.isEmpty() ? title : title + "§r: " + content;
+            wrapper.write(Types.TAG, TextUtil.stringToNbt(text)); // text
+        });
+        protocol.registerClientbound(ClientboundBedrockPackets.SHOW_CREDITS, ClientboundPackets26_1.GAME_EVENT, wrapper -> {
+            final long runtimeId = wrapper.read(BedrockTypes.UNSIGNED_VAR_LONG); // player runtime id
+            final int state = wrapper.read(BedrockTypes.VAR_INT); // credits state
+            if (runtimeId != wrapper.user().get(EntityTracker.class).getClientPlayer().runtimeId() || state != ShowCreditsPacketPayload_CreditsState.Start.getValue()) {
+                wrapper.cancel();
+                return;
+            }
+            wrapper.user().get(GameSessionStorage.class).setShowingCredits(true);
+            wrapper.write(Types.UNSIGNED_BYTE, (short) GameEventType.WIN_GAME.ordinal()); // event
+            wrapper.write(Types.FLOAT, 1F); // value (1 = roll the credits)
         });
         protocol.registerClientbound(ClientboundBedrockPackets.SET_TITLE, null, wrapper -> {
             final int rawType = wrapper.read(BedrockTypes.VAR_INT); // type
