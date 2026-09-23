@@ -267,6 +267,12 @@ public class InventoryPackets {
             wrapper.write(Types.SHORT, (short) javaId); // property id
             wrapper.write(Types.SHORT, (short) value); // value
         });
+        protocol.registerClientbound(ClientboundBedrockPackets.PLAYER_START_ITEM_COOLDOWN, ClientboundPackets26_1.COOLDOWN, wrapper -> {
+            final String category = wrapper.read(BedrockTypes.STRING); // item category (ender_pearl, shield, goat_horn, ...)
+            final int ticks = wrapper.read(BedrockTypes.VAR_INT); // duration
+            wrapper.write(Types.STRING, Key.namespaced(category)); // cooldown group
+            wrapper.write(Types.VAR_INT, ticks); // duration
+        });
         protocol.registerClientbound(ClientboundBedrockPackets.CRAFTING_DATA, null, wrapper -> {
             wrapper.cancel();
             final InventoryTracker inventoryTracker = wrapper.user().get(InventoryTracker.class);
