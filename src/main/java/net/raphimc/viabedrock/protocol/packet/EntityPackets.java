@@ -41,6 +41,8 @@ import net.raphimc.viabedrock.api.util.PacketFactory;
 import net.raphimc.viabedrock.api.util.RegistryUtil;
 import net.raphimc.viabedrock.api.util.TextUtil;
 import net.raphimc.viabedrock.protocol.BedrockProtocol;
+import net.raphimc.viabedrock.protocol.data.enums.bedrock.ActorDataIDs;
+import net.raphimc.viabedrock.protocol.rewriter.BlockStateRewriter;
 import net.raphimc.viabedrock.protocol.ClientboundBedrockPackets;
 import net.raphimc.viabedrock.protocol.data.enums.Direction;
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.*;
@@ -125,7 +127,19 @@ public class EntityPackets {
             wrapper.write(Types.BYTE, MathUtil.float2Byte(rotation.x())); // pitch
             wrapper.write(Types.BYTE, MathUtil.float2Byte(rotation.y())); // yaw
             wrapper.write(Types.BYTE, MathUtil.float2Byte(rotation.z())); // head yaw
-            wrapper.write(Types.VAR_INT, 0); // data
+            int spawnData = 0;
+            if (entity.javaType() == EntityTypes26_2.FALLING_BLOCK) {
+                // Java only learns a falling block's block state from the spawn data; Bedrock sends it as the VARIANT entity data
+                for (EntityData data : entityData) {
+                    if (data.id() == ActorDataIDs.VARIANT.getValue() && data.getValue() instanceof Number blockState) {
+                        final int javaBlockState = wrapper.user().get(BlockStateRewriter.class).javaId(blockState.intValue());
+                        if (javaBlockState != -1) {
+                            spawnData = javaBlockState;
+                        }
+                    }
+                }
+            }
+            wrapper.write(Types.VAR_INT, spawnData); // data
             wrapper.send(BedrockProtocol.class);
             wrapper.cancel();
 
