@@ -85,6 +85,7 @@ public class ItemStackRequestPacketType extends Type<ItemStackRequest> {
         if (type == null) {
             throw new IllegalArgumentException("Unknown item stack request action type: " + actionType);
         }
+        Types.BYTE.read(buffer); // action type (repeated as a byte constant inside the action data)
 
         Integer amount = null;
         ItemStackRequestSlot source = null;
@@ -178,7 +179,8 @@ public class ItemStackRequestPacketType extends Type<ItemStackRequest> {
     }
 
     private void writeAction(final ByteBuf buffer, final ItemStackRequestAction action) {
-        BedrockTypes.UNSIGNED_VAR_INT.write(buffer, action.type().getValue()); // action type (unsigned varint)
+        BedrockTypes.UNSIGNED_VAR_INT.write(buffer, action.type().getValue()); // action type (unsigned varint selector)
+        Types.BYTE.write(buffer, (byte) action.type().getValue()); // action type (repeated as a byte constant inside the action data)
 
         switch (action.type()) {
             case Take, Place, PlaceInItemContainer, TakeFromItemContainer -> {
