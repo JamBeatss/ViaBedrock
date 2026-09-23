@@ -69,6 +69,21 @@ public class EntityMetadataRewriter {
 
                 javaEntityData.add(new EntityData(entity.getJavaEntityDataIndex(EntityDataFields.SHARED_FLAGS), VersionedTypes.V26_2.entityDataTypes().byteType, javaBitMask));
 
+                if (entity.javaType().isOrHasParent(EntityTypes26_2.LIVING_ENTITY)) {
+                    // Java pose: 0 standing, 1 fall flying, 2 sleeping, 3 swimming, 5 crouching
+                    final boolean sleeping = bedrockFlags.contains(ActorFlags.SLEEPING);
+                    final int pose = sleeping ? 2 : bedrockFlags.contains(ActorFlags.GLIDING) ? 1 : bedrockFlags.contains(ActorFlags.SWIMMING) ? 3 : bedrockFlags.contains(ActorFlags.SNEAKING) ? 5 : 0;
+                    javaEntityData.add(new EntityData(entity.getJavaEntityDataIndex(EntityDataFields.POSE), VersionedTypes.V26_2.entityDataTypes().poseType, pose));
+                    // Java treats an entity as asleep when it has a sleeping position
+                    com.viaversion.viaversion.api.minecraft.BlockPosition bedPosition = null;
+                    if (sleeping && entity.entityData().get(ActorDataIDs.BED_POSITION) != null && entity.entityData().get(ActorDataIDs.BED_POSITION).getValue() instanceof com.viaversion.viaversion.api.minecraft.BlockPosition position) {
+                        bedPosition = position;
+                    }
+                    if (!sleeping || bedPosition != null) {
+                        javaEntityData.add(new EntityData(entity.getJavaEntityDataIndex(EntityDataFields.SLEEPING_POS), VersionedTypes.V26_2.entityDataTypes().optionalBlockPositionType, bedPosition));
+                    }
+                }
+
                 javaEntityData.add(new EntityData(entity.getJavaEntityDataIndex(EntityDataFields.SILENT), VersionedTypes.V26_2.entityDataTypes().booleanType, bedrockFlags.contains(ActorFlags.SILENT)));
                 javaEntityData.add(new EntityData(entity.getJavaEntityDataIndex(EntityDataFields.NO_GRAVITY), VersionedTypes.V26_2.entityDataTypes().booleanType, !bedrockFlags.contains(ActorFlags.HAS_GRAVITY)));
 
@@ -653,6 +668,11 @@ public class EntityMetadataRewriter {
                 // Dropped items carry their item name, which the Bedrock client never renders as a name tag
                 if (entityData.getValue() instanceof String name && entity.javaType().isOrHasParent(EntityTypes26_2.LIVING_ENTITY)) {
                     javaEntityData.add(new EntityData(entity.getJavaEntityDataIndex(EntityDataFields.CUSTOM_NAME), VersionedTypes.V26_2.entityDataTypes().optionalComponentType, name.isEmpty() ? null : TextUtil.textComponentToNbt(TextUtil.stringToTextComponent(name))));
+                }
+            }
+            case BED_POSITION -> {
+                if (entity.entityFlags().contains(ActorFlags.SLEEPING) && entity.javaType().isOrHasParent(EntityTypes26_2.LIVING_ENTITY) && entityData.getValue() instanceof com.viaversion.viaversion.api.minecraft.BlockPosition position) {
+                    javaEntityData.add(new EntityData(entity.getJavaEntityDataIndex(EntityDataFields.SLEEPING_POS), VersionedTypes.V26_2.entityDataTypes().optionalBlockPositionType, position));
                 }
             }
             case NAMETAG_ALWAYS_SHOW -> {

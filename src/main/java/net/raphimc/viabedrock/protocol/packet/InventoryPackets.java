@@ -170,7 +170,7 @@ public class InventoryPackets {
                             continue;
                         }
                         for (ItemStackResponse.Slot responseSlot : responseContainer.slots()) {
-                            final int slotIndex = responseSlot.slot() & 0xFF; // The second slot field is the authoritative slot index
+                            final int slotIndex = container == inventoryTracker.getOffhandContainer() ? 0 : responseSlot.slot() & 0xFF; // The second slot field is the authoritative slot index (offhand is addressed as slot 1)
                             final BedrockItem tracked = container.getItem(slotIndex);
                             if (responseSlot.amount() <= 0 || (tracked.isEmpty() && responseSlot.serverNetId() == 0)) {
                                 if (!tracked.isEmpty()) {
@@ -837,8 +837,10 @@ public class InventoryPackets {
         final ItemStackRequestSlot source = requestSlotInfo(inventoryTracker, container, javaSlot & 0xFFFF);
         final ItemStackRequestSlot cursor = cursorSlot(inventoryTracker);
         final BedrockItem cursorItem = inventoryTracker.getHudContainer().getItem(0);
-        final int clickedBedrockSlot = container.bedrockSlot(javaSlot & 0xFFFF);
-        final BedrockItem clicked = clickedBedrockSlot >= 0 && clickedBedrockSlot < container.size() ? container.getItem(clickedBedrockSlot) : BedrockItem.empty();
+        // Read the clicked item from the container the request slot really addresses (armor, offhand, crafting grid, ...)
+        final TrackedSlot clickedSlot = resolveRequestSlot(inventoryTracker, source);
+        final BedrockItem clickedItem = clickedSlot != null ? clickedSlot.container().getItem(clickedSlot.slot()) : null;
+        final BedrockItem clicked = clickedItem != null ? clickedItem : BedrockItem.empty();
 
         switch (action) {
             case PICKUP -> {
@@ -925,7 +927,9 @@ public class InventoryPackets {
         }
         return switch (containerName.name()) {
             case InventoryContainer, HotbarContainer, CombinedHotbarAndInventoryContainer -> inventoryTracker.getInventoryContainer();
-            case CursorContainer -> inventoryTracker.getHudContainer();
+            case CursorContainer, CraftingInputContainer -> inventoryTracker.getHudContainer();
+            case ArmorContainer -> inventoryTracker.getArmorContainer();
+            case OffhandContainer -> inventoryTracker.getOffhandContainer();
             case LevelEntityContainer, CrafterLevelEntityContainer -> inventoryTracker.getCurrentContainer();
             default -> {
                 // Per-type container names (anvil input, furnace fuel, ...) all address the open container
