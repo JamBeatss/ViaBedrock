@@ -1,35 +1,41 @@
-# Testing status of the `bedrock-1.26.51` branch
+# Testing status of the `official-merged` branch
 
-Tested by hand on a live Bedrock 1.26.51 Realm (Java 26.3 client through ViaProxy), 2026-09-22:
+This branch is the official Bedrock 1.26.51 update (RaphiMC/ViaBedrock#415) plus nekohacker591's open inventory pull requests (#404-#407), ported to it, plus fixes for playing on a Bedrock Realm. Each commit's title says whether it was tested in game.
 
-- Joining a Realm, chunks, block and item data for 1.26.50/51
-- Inventory: click moves, shift-click (inventory, chest, furnace, armor), armor equip/unequip
-- Chests (single and double), furnaces, doors, beds, dropped item and XP orb name tags
-- Hunger/health sync, falling blocks
+Setup used for testing: a Bedrock 1.26.51 Realm, a Java 26.3 client and ViaProxy 3.4.14-SNAPSHOT (`1546174`), on 2026-09-22. The in-game tests ran on the earlier `bedrock-1.26.51` branch, which used its own protocol update. The commits marked tested carry the same behaviour, since restructured into smaller classes, but this combined version on the official update has not been played yet.
 
-**UNTESTED: crafting** (commit "Crafting: read recipes, match 2x2/3x3 grids, ..."). It compiles and
-the proxy starts, but it has not been tried in game yet. Expect bugs in recipe reading, grid
-matching and the craft request.
+## Seen working in game
 
-Also untested: sleeping pose, drag placement (QUICK_CRAFT), the join hurt-event suppression, boat movement (MOVE_VEHICLE), per-item stack sizes.
+- Joining the Realm; terrain and textures load in the Overworld and the Nether
+- Moving items inside the inventory, inside chests, and between a chest and the inventory
+- Shift-click: inventory to hotbar and back, chest to inventory and back, furnace to inventory and back, armor on and off
+- Putting armor on and taking it off by clicking
+- Single and double chests
+- Furnaces
+- Doors, including clicking the top half
+- Breaking a bed removes both halves
+- Falling gravel
+- Dropped items and XP orbs no longer show name tags
+- No red hurt flash on joining
 
-Also untested (added 2026-09-22, late):
+## Not tested in game
 
-- World clock sync (time of day, sleeping through the night, `/time set`) and item cooldowns
-- Villager trading (UPDATE_TRADE opens the screen, SELECT_TRADE autofills one stack per input, result slot trades once per click)
-- Enchanting table (options as Java hints, button click to enchant request)
-- Anvil rename and combine (the Java result is a local prediction; combined enchantments only show after a resync; repair material use is estimated, at most four)
-- Beacon effect selection (the screen always reports a level 4 pyramid; the server checks the real one)
-- Book and quill editing and signing
-- End credits after the dragon, and the finished reply that returns you to the Overworld
-- Toasts, shown on the action bar
-- Item moves into anvils, grindstones, looms, stonecutters, cartography and smithing tables (their results are not predicted, so only anvil, trade and enchanting produce anything)
-- Brewing stand slot order, barrel and shulker box container names
-- Review fixes: late item stack responses still apply, queued clicks are dropped on container change, shaped recipes only mirror when the recipe allows it
+- Crafting (the recipe reader has never run against a live server), drag placement, per-item stack sizes
+- Villager trading, enchanting table, anvil, beacon, book editing, brewing stand, barrels and shulker boxes, and moving items into grindstones, looms, stonecutters, cartography and smithing tables
+- Time of day sync, item cooldowns, End credits, toasts, boats, sleeping pose, the sideways tilt on joining
+- Creative mode placement
 
-Not implemented: recipe book "place recipe", grindstone/loom/stonecutter/cartography/smithing results, achievements.
+## Automated tests
 
-Known unresolved: sessions drop after 1-3 minutes at the WebRTC layer ("juice: Lost connectivity")
-inside the NetherNet transport library, not in ViaBedrock code.
+`./gradlew test` runs 18 JUnit tests. They check the item stack request and response formats against bytes from the CloudburstMC reference encoder, plus the slot mapping and how accepted requests update the tracked inventory.
 
-This branch includes four unreviewed upstream PRs (RaphiMC/ViaBedrock #404-#407) plus fixes on top.
+## Known problems, not fixed
+
+- Sessions drop after 1 to 3 minutes (`juice: Lost connectivity`, in the NetherNet transport, not in ViaBedrock)
+- Walking through doors sometimes pulls you back
+- Fired arrows render dark
+
+## Other branches on this fork
+
+- `tested-only`: only what was seen working in game, on the earlier `bedrock-1.26.51` protocol update
+- `bedrock-1.26.51`: the earlier branch with everything, before the official update was merged
