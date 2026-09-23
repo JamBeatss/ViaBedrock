@@ -83,6 +83,14 @@ public record ItemStackRequestAction(
         return new ItemStackRequestAction(ItemStackRequestActionType.ScreenBeaconPayment, null, null, null, null, null, primaryEffect, secondaryEffect, null, null, null, null, null, null, null, null, null);
     }
 
+    public static ItemStackRequestAction craftRecipeOptional(final int recipeNetId, final int filteredStringIndex) {
+        return new ItemStackRequestAction(ItemStackRequestActionType.CraftRecipeOptional, null, null, null, null, null, null, null, recipeNetId, null, null, filteredStringIndex, null, null, null, null, null);
+    }
+
+    public static ItemStackRequestAction craftResults(final int timesCrafted) {
+        return new ItemStackRequestAction(ItemStackRequestActionType.CraftResults, null, null, null, null, null, null, null, null, timesCrafted, null, null, null, null, null, null, null);
+    }
+
     public static ItemStackRequestAction craftResultsDeprecated() {
         return new ItemStackRequestAction(ItemStackRequestActionType.CraftResults, null, null, null, null, null, null, null, null, 0, null, null, null, null, null, null, null);
     }

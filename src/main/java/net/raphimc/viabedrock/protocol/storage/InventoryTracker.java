@@ -80,6 +80,79 @@ public class InventoryTracker extends StoredObject {
 
     private final java.util.ArrayDeque<Object> queuedClicks = new java.util.ArrayDeque<>();
 
+    // Special screens (anvil, enchanting table, villager trading)
+    public record EnchantOption(int cost, int netId, java.util.List<int[]> enchants) { // enchants: {bedrock enchant type, level}
+    }
+
+    public record TradeOffer(net.raphimc.viabedrock.protocol.model.BedrockItem buyA, net.raphimc.viabedrock.protocol.model.BedrockItem buyB, net.raphimc.viabedrock.protocol.model.BedrockItem sell, int netId, boolean outOfStock) {
+    }
+
+    private String anvilName;
+    private final java.util.List<EnchantOption> enchantOptions = new java.util.ArrayList<>();
+    private final java.util.List<TradeOffer> tradeOffers = new java.util.ArrayList<>();
+    private int selectedTrade = -1;
+    private net.raphimc.viabedrock.protocol.model.BedrockItem createdOutputPreview;
+    private java.util.List<String> pendingFilterStrings = new java.util.ArrayList<>();
+
+    /**
+     * Text the next item stack request carries for server side filtering (the anvil rename text).
+     */
+    public void setPendingFilterStrings(final java.util.List<String> filterStrings) {
+        this.pendingFilterStrings = new java.util.ArrayList<>(filterStrings);
+    }
+
+    public java.util.List<String> takePendingFilterStrings() {
+        final java.util.List<String> filterStrings = this.pendingFilterStrings;
+        this.pendingFilterStrings = new java.util.ArrayList<>();
+        return filterStrings;
+    }
+
+    public String anvilName() {
+        return this.anvilName;
+    }
+
+    public void setAnvilName(final String anvilName) {
+        this.anvilName = anvilName;
+    }
+
+    public java.util.List<EnchantOption> enchantOptions() {
+        return this.enchantOptions;
+    }
+
+    public java.util.List<TradeOffer> tradeOffers() {
+        return this.tradeOffers;
+    }
+
+    public int selectedTrade() {
+        return this.selectedTrade;
+    }
+
+    public void setSelectedTrade(final int selectedTrade) {
+        this.selectedTrade = selectedTrade;
+    }
+
+    /**
+     * The item a special screen request will create (anvil output, enchanted item, trade result). Consumed by the next request snapshot.
+     */
+    public void setCreatedOutputPreview(final net.raphimc.viabedrock.protocol.model.BedrockItem createdOutputPreview) {
+        this.createdOutputPreview = createdOutputPreview;
+    }
+
+    public net.raphimc.viabedrock.protocol.model.BedrockItem takeCreatedOutputPreview() {
+        final net.raphimc.viabedrock.protocol.model.BedrockItem preview = this.createdOutputPreview;
+        this.createdOutputPreview = null;
+        return preview;
+    }
+    private net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.ContainerEnumName levelEntityContainerName = net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.ContainerEnumName.LevelEntityContainer;
+
+    public net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.ContainerEnumName getLevelEntityContainerName() {
+        return this.levelEntityContainerName;
+    }
+
+    public void setLevelEntityContainerName(final net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.ContainerEnumName levelEntityContainerName) {
+        this.levelEntityContainerName = levelEntityContainerName;
+    }
+
     public record Ingredient(int kind, String value, int aux, int count) { // kind: 0 empty, 1 item id, 2 item tag, 3 unsupported
     }
 
@@ -314,6 +387,11 @@ public class InventoryTracker extends StoredObject {
         }
         this.currentContainer = container;
         this.queuedClicks.clear(); // Never replay a click against a newly opened container that reuses the id
+        this.anvilName = null;
+        this.enchantOptions.clear();
+        this.tradeOffers.clear();
+        this.selectedTrade = -1;
+        this.createdOutputPreview = null;
     }
 
     public Container getPendingCloseContainer() {

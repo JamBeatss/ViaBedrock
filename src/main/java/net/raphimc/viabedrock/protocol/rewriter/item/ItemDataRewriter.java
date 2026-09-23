@@ -204,7 +204,7 @@ public class ItemDataRewriter {
         javaItem.dataContainer().set(key, javaEnchantments);
     }
 
-    private static int getJavaEnchantmentIndex(final Enchant_Type bedrockEnchantment) {
+    public static int getJavaEnchantmentIndex(final Enchant_Type bedrockEnchantment) {
         final String javaEnchantmentId = BedrockProtocol.MAPPINGS.getBedrockToJavaEnchantments().get(bedrockEnchantment);
         if (javaEnchantmentId == null) {
             return -1;
