@@ -42,6 +42,10 @@ public class ItemStackRequestPacketType extends Type<ItemStackRequest> {
 
     @Override
     public ItemStackRequest read(final ByteBuf buffer) {
+        final int requestsCount = BedrockTypes.UNSIGNED_VAR_INT.read(buffer); // requests count
+        if (requestsCount != 1) {
+            throw new IllegalStateException("Expected exactly one item stack request, got " + requestsCount);
+        }
         final int requestId = BedrockTypes.VAR_INT.read(buffer); // client request id (signed varint)
         final int actionsCount = BedrockTypes.UNSIGNED_VAR_INT.read(buffer); // actions count
         final List<ItemStackRequestAction> actions = new ArrayList<>(actionsCount);
@@ -59,6 +63,7 @@ public class ItemStackRequestPacketType extends Type<ItemStackRequest> {
 
     @Override
     public void write(final ByteBuf buffer, final ItemStackRequest request) {
+        BedrockTypes.UNSIGNED_VAR_INT.write(buffer, 1); // requests count
         BedrockTypes.VAR_INT.write(buffer, request.requestId()); // client request id (signed varint)
         BedrockTypes.UNSIGNED_VAR_INT.write(buffer, request.actions().size()); // actions count
         for (ItemStackRequestAction action : request.actions()) {
