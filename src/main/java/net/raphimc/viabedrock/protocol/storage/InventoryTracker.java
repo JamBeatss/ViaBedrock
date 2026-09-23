@@ -80,6 +80,36 @@ public class InventoryTracker extends StoredObject {
 
     private final java.util.ArrayDeque<Object> queuedClicks = new java.util.ArrayDeque<>();
 
+    public record Ingredient(int kind, String value, int aux, int count) { // kind: 0 empty, 1 item id, 2 item tag, 3 unsupported
+    }
+
+    public record Recipe(int netId, String tag, boolean shaped, int width, int height, java.util.List<Ingredient> ingredients, net.raphimc.viabedrock.protocol.model.BedrockItem result) {
+    }
+
+    private final java.util.List<Recipe> recipes = new java.util.ArrayList<>();
+    private Recipe matchedRecipe;
+    private final java.util.List<Short> dragSlots = new java.util.ArrayList<>();
+
+    public java.util.List<Recipe> recipes() {
+        return this.recipes;
+    }
+
+    public Recipe matchedRecipe() {
+        return this.matchedRecipe;
+    }
+
+    public void setMatchedRecipe(final Recipe recipe) {
+        this.matchedRecipe = recipe;
+    }
+
+    public java.util.List<Short> dragSlots() {
+        return this.dragSlots;
+    }
+
+    public int peekNextItemStackRequestId() {
+        return this.nextItemStackRequestId;
+    }
+
     public java.util.ArrayDeque<Object> queuedClicks() {
         return this.queuedClicks;
     }

@@ -59,6 +59,9 @@ import net.lenni0451.mcstructs_bedrock.text.utils.BedrockTextUtils;
 import net.raphimc.viabedrock.ViaBedrock;
 import net.raphimc.viabedrock.api.chunk.BedrockBlockEntity;
 import net.raphimc.viabedrock.api.model.container.ChestContainer;
+import com.viaversion.viaversion.util.Key;
+import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.ItemStackRequestActionType;
+import net.raphimc.viabedrock.api.model.container.CraftingTableContainer;
 import net.raphimc.viabedrock.api.model.container.Container;
 import net.raphimc.viabedrock.api.model.container.SimpleContainer;
 import net.raphimc.viabedrock.api.model.container.player.InventoryContainer;
@@ -170,7 +173,10 @@ public class InventoryPackets {
                             continue;
                         }
                         for (ItemStackResponse.Slot responseSlot : responseContainer.slots()) {
-                            final int slotIndex = container == inventoryTracker.getOffhandContainer() ? 0 : responseSlot.slot() & 0xFF; // The second slot field is the authoritative slot index (offhand is addressed as slot 1)
+                            final int slotIndex = container == inventoryTracker.getOffhandContainer() ? 0 : container instanceof CraftingTableContainer ? (responseSlot.slot() & 0xFF) - 32 : responseSlot.slot() & 0xFF; // The second slot field is the authoritative slot index (offhand is addressed as slot 1, the crafting grid as 32-40)
+                            if (slotIndex < 0 || slotIndex >= container.size()) {
+                                continue;
+                            }
                             final BedrockItem tracked = container.getItem(slotIndex);
                             if (responseSlot.amount() <= 0 || (tracked.isEmpty() && responseSlot.serverNetId() == 0)) {
                                 if (!tracked.isEmpty()) {
@@ -205,6 +211,7 @@ public class InventoryPackets {
                 final PacketWrapper acceptedCursorPacket = PacketWrapper.create(ClientboundPackets26_1.SET_CURSOR_ITEM, wrapper.user());
                 acceptedCursorPacket.write(VersionedTypes.V26_2.item, inventoryTracker.getHudContainer().getJavaItem(0)); // cursor item
                 acceptedCursorPacket.send(BedrockProtocol.class);
+                updateCraftingResult(wrapper.user(), inventoryTracker);
                 drainQueuedClicks(wrapper.user(), inventoryTracker);
                 return;
             }
@@ -220,6 +227,7 @@ public class InventoryPackets {
             cursorPacket.write(VersionedTypes.V26_2.item, inventoryTracker.getHudContainer().getJavaItem(0)); // cursor item
             cursorPacket.send(BedrockProtocol.class);
             inventoryTracker.queuedClicks().clear(); // Queued clicks were built on the rejected state
+            updateCraftingResult(wrapper.user(), inventoryTracker);
         });
         protocol.registerClientbound(ClientboundBedrockPackets.CONTAINER_SET_DATA, ClientboundPackets26_1.CONTAINER_SET_DATA, wrapper -> {
             final int containerId = wrapper.read(Types.UNSIGNED_BYTE); // container id
@@ -258,6 +266,61 @@ public class InventoryPackets {
             wrapper.write(Types.VAR_INT, (int) container.javaContainerId()); // container id
             wrapper.write(Types.SHORT, (short) javaId); // property id
             wrapper.write(Types.SHORT, (short) value); // value
+        });
+        protocol.registerClientbound(ClientboundBedrockPackets.CRAFTING_DATA, null, wrapper -> {
+            wrapper.cancel();
+            final InventoryTracker inventoryTracker = wrapper.user().get(InventoryTracker.class);
+            final ItemRewriter itemRewriter = wrapper.user().get(ItemRewriter.class);
+            final List<InventoryTracker.Recipe> recipes = new ArrayList<>();
+            try {
+                for (int list = 0; list < 2; list++) { // Shaped recipes first, then shapeless; the remaining lists are not needed
+                    final boolean shaped = list == 0;
+                    final int count = wrapper.read(BedrockTypes.UNSIGNED_VAR_INT);
+                    for (int i = 0; i < count; i++) {
+                        wrapper.read(BedrockTypes.STRING); // recipe id
+                        int width = 0, height = 0;
+                        if (shaped) {
+                            width = wrapper.read(BedrockTypes.VAR_INT); // width
+                            height = wrapper.read(BedrockTypes.VAR_INT); // height
+                        }
+                        final int ingredientCount = wrapper.read(BedrockTypes.UNSIGNED_VAR_INT);
+                        final List<InventoryTracker.Ingredient> ingredients = new ArrayList<>(ingredientCount);
+                        for (int j = 0; j < ingredientCount; j++) {
+                            ingredients.add(readRecipeIngredient(wrapper));
+                        }
+                        final int resultCount = wrapper.read(BedrockTypes.UNSIGNED_VAR_INT);
+                        BedrockItem result = BedrockItem.empty();
+                        for (int j = 0; j < resultCount; j++) {
+                            final BedrockItem output = wrapper.read(itemRewriter.itemInstanceType()); // result
+                            if (j == 0) result = output;
+                        }
+                        wrapper.read(BedrockTypes.UUID); // uuid
+                        final String tag = wrapper.read(BedrockTypes.STRING); // crafting tag
+                        wrapper.read(BedrockTypes.VAR_INT); // priority
+                        if (shaped) {
+                            wrapper.read(Types.BOOLEAN); // assume symmetry
+                        }
+                        if (wrapper.read(Types.BOOLEAN)) { // has unlocking requirement
+                            wrapper.read(BedrockTypes.VAR_INT); // unlocking context
+                            if (wrapper.read(Types.BOOLEAN)) {
+                                final int requirementCount = wrapper.read(BedrockTypes.UNSIGNED_VAR_INT);
+                                for (int j = 0; j < requirementCount; j++) {
+                                    readRecipeIngredient(wrapper);
+                                }
+                            }
+                        }
+                        final int netId = wrapper.read(BedrockTypes.UNSIGNED_VAR_INT); // recipe net id
+                        if (!result.isEmpty() && (tag.equals("crafting_table") || tag.equals("deprecated"))) {
+                            recipes.add(new InventoryTracker.Recipe(netId, tag, shaped, width, height, ingredients, result));
+                        }
+                    }
+                }
+            } catch (Throwable e) {
+                ViaBedrock.getPlatform().getLogger().log(Level.WARNING, "Failed to read crafting recipes (" + recipes.size() + " read so far)", e);
+            }
+            inventoryTracker.recipes().clear();
+            inventoryTracker.recipes().addAll(recipes);
+            ViaBedrock.getPlatform().getLogger().log(Level.INFO, "Loaded " + recipes.size() + " crafting recipes");
         });
         protocol.registerClientbound(ClientboundBedrockPackets.CREATIVE_CONTENT, null, wrapper -> {
             wrapper.cancel();
@@ -326,7 +389,7 @@ public class InventoryPackets {
                     container = new ChestContainer(wrapper.user(), containerId, title, position, size);
                 }
                 case MINECART_CHEST, CHEST_BOAT -> container = new SimpleContainer(wrapper.user(), containerId, type, title, position, 27);
-                case WORKBENCH -> container = new SimpleContainer(wrapper.user(), containerId, type, title, position, 9, 1, blockTags("crafting_table")); // Java slot 0 is the result slot
+                case WORKBENCH -> container = new CraftingTableContainer(wrapper.user(), containerId, new TranslationComponent("container.crafting"), position, blockTags("crafting_table")); // Java slot 0 is the result slot
                 case CRAFTER -> container = new SimpleContainer(wrapper.user(), containerId, type, title, position, 10, blockTags("crafter"));
                 case FURNACE -> container = new SimpleContainer(wrapper.user(), containerId, type, title, position, 3, blockTags("furnace"));
                 case BLAST_FURNACE -> container = new SimpleContainer(wrapper.user(), containerId, type, title, position, 3, blockTags("blast_furnace"));
@@ -831,6 +894,13 @@ public class InventoryPackets {
                 javaSlot = javaSlot - playerRegionStart + 9; // Java player inventory slot numbering (9-35 main, 36-44 hotbar)
             }
         }
+        final boolean craftingView = viewContainer instanceof CraftingTableContainer || viewContainer.type() == ContainerType.INVENTORY;
+        if (craftingView && javaSlot == 0 && (action == ContainerInput.PICKUP || action == ContainerInput.QUICK_MOVE)) {
+            return buildCraftActions(inventoryTracker, viewContainer, action);
+        }
+        if (action == ContainerInput.QUICK_CRAFT) {
+            return buildDragActions(inventoryTracker, viewContainer, rawJavaSlot, button);
+        }
         if (action == ContainerInput.QUICK_MOVE) {
             return buildQuickMoveActions(inventoryTracker, viewContainer, container, javaSlot, containerView);
         }
@@ -927,7 +997,9 @@ public class InventoryPackets {
         }
         return switch (containerName.name()) {
             case InventoryContainer, HotbarContainer, CombinedHotbarAndInventoryContainer -> inventoryTracker.getInventoryContainer();
-            case CursorContainer, CraftingInputContainer -> inventoryTracker.getHudContainer();
+            case CursorContainer -> inventoryTracker.getHudContainer();
+            case CraftingInputContainer -> inventoryTracker.getCurrentContainer() instanceof CraftingTableContainer table ? table : inventoryTracker.getHudContainer();
+            case CreatedOutputContainer -> null;
             case ArmorContainer -> inventoryTracker.getArmorContainer();
             case OffhandContainer -> inventoryTracker.getOffhandContainer();
             case LevelEntityContainer, CrafterLevelEntityContainer -> inventoryTracker.getCurrentContainer();
@@ -966,6 +1038,10 @@ public class InventoryPackets {
         }
         // Open containers are anchored to block entities: Bedrock networked as level entity containers
         final int bedrockSlot = container.bedrockSlot(javaSlot);
+        if (container instanceof CraftingTableContainer) { // The 3x3 grid is addressed through the crafting input UI slots 32-40
+            if (bedrockSlot < 0 || bedrockSlot >= 9) return null;
+            return new ItemStackRequestSlot(new FullContainerName(ContainerEnumName.CraftingInputContainer, null), (byte) (32 + bedrockSlot), netIdOf(container.getItem(bedrockSlot)));
+        }
         final ContainerEnumName containerName = bedrockContainerName(container.type(), bedrockSlot);
         if (bedrockSlot < 0 || bedrockSlot >= container.size()) {
             return null;
@@ -1138,13 +1214,13 @@ public class InventoryPackets {
             case CursorContainer -> inventoryTracker.getHudContainer();
             case ArmorContainer -> inventoryTracker.getArmorContainer();
             case OffhandContainer -> inventoryTracker.getOffhandContainer();
-            case CraftingInputContainer -> inventoryTracker.getHudContainer();
+            case CraftingInputContainer -> index >= 32 && inventoryTracker.getCurrentContainer() instanceof CraftingTableContainer table ? table : inventoryTracker.getHudContainer();
             default -> inventoryTracker.getCurrentContainer();
         };
         if (container == null) {
             return null;
         }
-        final int resolvedIndex = slot.containerName().name() == ContainerEnumName.OffhandContainer ? 0 : index;
+        final int resolvedIndex = slot.containerName().name() == ContainerEnumName.OffhandContainer ? 0 : container instanceof CraftingTableContainer ? index - 32 : index;
         if (resolvedIndex < 0 || resolvedIndex >= container.size()) {
             return null;
         }
@@ -1154,6 +1230,10 @@ public class InventoryPackets {
     private static List<BedrockItem> snapshotSources(final InventoryTracker inventoryTracker, final List<ItemStackRequestAction> actions) {
         final List<BedrockItem> snapshots = new ArrayList<>(actions.size());
         for (ItemStackRequestAction action : actions) {
+            if (action.source() != null && action.source().containerName() != null && action.source().containerName().name() == ContainerEnumName.CreatedOutputContainer) {
+                snapshots.add(inventoryTracker.matchedRecipe() != null ? inventoryTracker.matchedRecipe().result().copy() : null);
+                continue;
+            }
             final TrackedSlot from = resolveRequestSlot(inventoryTracker, action.source());
             final BedrockItem item = from != null ? from.container().getItem(from.slot()) : null;
             snapshots.add(item == null || item.isEmpty() ? null : item.copy());
@@ -1162,6 +1242,13 @@ public class InventoryPackets {
     }
 
     private static void moveTracked(final TrackedSlot from, final TrackedSlot to, final int amount, final BedrockItem sourceSnapshot) {
+        if (from == null && to != null && sourceSnapshot != null) { // Crafted output: nothing to take it from
+            final BedrockItem target = to.container().getItem(to.slot());
+            final BedrockItem placed = (target == null || target.isEmpty()) ? sourceSnapshot.copy() : target.copy();
+            placed.setAmount((target == null || target.isEmpty()) ? amount : target.amount() + amount);
+            to.container().setItem(to.slot(), placed);
+            return;
+        }
         if (from == null || to == null) {
             return;
         }
@@ -1470,6 +1557,221 @@ public class InventoryPackets {
         } else if (gameSession.isInventoryServerAuthoritative() && actions == null) {
             resyncClick(user, inventoryTracker, container);
         }
+    }
+
+
+    private static InventoryTracker.Ingredient readRecipeIngredient(final PacketWrapper wrapper) {
+        final int typeId = wrapper.read(BedrockTypes.UNSIGNED_VAR_INT); // descriptor type
+        InventoryTracker.Ingredient ingredient;
+        if (typeId == 0) {
+            wrapper.read(BedrockTypes.VAR_INT); // aux
+            ingredient = new InventoryTracker.Ingredient(0, null, 0, 0);
+        } else {
+            final String kind = wrapper.read(BedrockTypes.STRING); // descriptor name
+            switch (kind) {
+                case "default" -> {
+                    final String id = wrapper.read(BedrockTypes.STRING);
+                    final int aux = wrapper.read(BedrockTypes.VAR_INT);
+                    ingredient = new InventoryTracker.Ingredient(1, id, aux, 0);
+                }
+                case "item_tag" -> {
+                    final String tag = wrapper.read(BedrockTypes.STRING);
+                    wrapper.read(BedrockTypes.VAR_INT); // aux
+                    ingredient = new InventoryTracker.Ingredient(2, tag, 0, 0);
+                }
+                case "molang" -> {
+                    final String expression = wrapper.read(BedrockTypes.STRING);
+                    wrapper.read(BedrockTypes.SHORT_LE); // molang version
+                    ingredient = new InventoryTracker.Ingredient(3, expression, 0, 0);
+                }
+                default -> throw new IllegalStateException("Unknown recipe item descriptor: " + kind);
+            }
+        }
+        final int count = wrapper.read(BedrockTypes.VAR_INT); // count
+        return new InventoryTracker.Ingredient(ingredient.kind(), ingredient.value(), ingredient.aux(), count);
+    }
+
+    private static boolean ingredientMatches(final UserConnection user, final InventoryTracker.Ingredient ingredient, final BedrockItem item) {
+        final boolean empty = item == null || item.isEmpty();
+        if (ingredient.kind() == 0) return empty;
+        if (empty) return false;
+        final String identifier = user.get(ItemRewriter.class).getItems().inverse().get(item.identifier());
+        if (identifier == null) return false;
+        return switch (ingredient.kind()) {
+            case 1 -> Key.namespaced(ingredient.value()).equals(identifier) && (ingredient.aux() == 32767 || ingredient.aux() == -1 || ingredient.aux() == item.data());
+            case 2 -> {
+                final java.util.Set<String> tags = BedrockProtocol.MAPPINGS.getBedrockItemTags().get(identifier);
+                yield tags != null && tags.contains(Key.namespaced(ingredient.value())) || tags != null && tags.contains(ingredient.value());
+            }
+            default -> false;
+        };
+    }
+
+    private static BedrockItem[] craftingGrid(final InventoryTracker inventoryTracker, final Container viewContainer) {
+        if (viewContainer instanceof CraftingTableContainer table) {
+            return table.getItems();
+        }
+        final BedrockItem[] grid = new BedrockItem[4];
+        for (int i = 0; i < 4; i++) grid[i] = inventoryTracker.getHudContainer().getItem(28 + i);
+        return grid;
+    }
+
+    private static InventoryTracker.Recipe matchRecipe(final UserConnection user, final InventoryTracker inventoryTracker, final BedrockItem[] grid) {
+        final int size = grid.length == 9 ? 3 : 2;
+        int minX = size, minY = size, maxX = -1, maxY = -1;
+        final List<BedrockItem> nonEmpty = new ArrayList<>();
+        for (int i = 0; i < grid.length; i++) {
+            if (grid[i] != null && !grid[i].isEmpty()) {
+                final int x = i % size, y = i / size;
+                minX = Math.min(minX, x); maxX = Math.max(maxX, x);
+                minY = Math.min(minY, y); maxY = Math.max(maxY, y);
+                nonEmpty.add(grid[i]);
+            }
+        }
+        if (nonEmpty.isEmpty()) return null;
+        final int boxWidth = maxX - minX + 1, boxHeight = maxY - minY + 1;
+        for (InventoryTracker.Recipe recipe : inventoryTracker.recipes()) {
+            if (recipe.shaped()) {
+                if (recipe.width() != boxWidth || recipe.height() != boxHeight) continue;
+                for (int mirror = 0; mirror < 2; mirror++) {
+                    boolean ok = true;
+                    for (int y = 0; y < boxHeight && ok; y++) {
+                        for (int x = 0; x < boxWidth && ok; x++) {
+                            final int rx = mirror == 0 ? x : boxWidth - 1 - x;
+                            final InventoryTracker.Ingredient ingredient = recipe.ingredients().get(y * recipe.width() + rx);
+                            ok = ingredientMatches(user, ingredient, grid[(minY + y) * size + minX + x]);
+                        }
+                    }
+                    if (ok) return recipe;
+                }
+            } else {
+                final List<InventoryTracker.Ingredient> needed = new ArrayList<>();
+                for (InventoryTracker.Ingredient ingredient : recipe.ingredients()) {
+                    if (ingredient.kind() == 0) continue;
+                    for (int c = 0; c < Math.max(1, ingredient.count()); c++) needed.add(ingredient);
+                }
+                if (needed.size() != nonEmpty.size() || needed.size() > size * size) continue;
+                if (assignShapeless(user, needed, nonEmpty, new boolean[nonEmpty.size()], 0)) return recipe;
+            }
+        }
+        return null;
+    }
+
+    private static boolean assignShapeless(final UserConnection user, final List<InventoryTracker.Ingredient> needed, final List<BedrockItem> items, final boolean[] used, final int index) {
+        if (index == needed.size()) return true;
+        for (int i = 0; i < items.size(); i++) {
+            if (!used[i] && ingredientMatches(user, needed.get(index), items.get(i))) {
+                used[i] = true;
+                if (assignShapeless(user, needed, items, used, index + 1)) return true;
+                used[i] = false;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Recomputes the crafting result for the open crafting grid and shows it in Java slot 0.
+     */
+    static void updateCraftingResult(final UserConnection user, final InventoryTracker inventoryTracker) {
+        final Container current = inventoryTracker.getCurrentContainer();
+        if (!(current instanceof CraftingTableContainer) && (current == null || current.type() != ContainerType.INVENTORY)) {
+            inventoryTracker.setMatchedRecipe(null);
+            return;
+        }
+        final InventoryTracker.Recipe recipe = matchRecipe(user, inventoryTracker, craftingGrid(inventoryTracker, current));
+        inventoryTracker.setMatchedRecipe(recipe);
+        final BedrockItem result = recipe != null ? recipe.result() : BedrockItem.empty();
+        if (current instanceof CraftingTableContainer table) {
+            table.setResult(result);
+        }
+        final PacketWrapper setSlot = PacketWrapper.create(ClientboundPackets26_1.CONTAINER_SET_SLOT, user);
+        setSlot.write(Types.VAR_INT, current instanceof CraftingTableContainer ? (int) current.javaContainerId() : (int) inventoryTracker.getInventoryContainer().javaContainerId()); // container id
+        setSlot.write(Types.VAR_INT, 0); // revision
+        setSlot.write(Types.SHORT, (short) 0); // slot
+        setSlot.write(VersionedTypes.V26_2.item, user.get(ItemRewriter.class).javaItem(result)); // item
+        setSlot.send(BedrockProtocol.class);
+    }
+
+    private static List<ItemStackRequestAction> buildCraftActions(final InventoryTracker inventoryTracker, final Container viewContainer, final ContainerInput action) {
+        final InventoryTracker.Recipe recipe = inventoryTracker.matchedRecipe();
+        if (recipe == null) return new ArrayList<>();
+        final BedrockItem result = recipe.result();
+        final BedrockItem held = inventoryTracker.getHudContainer().getItem(0);
+        final List<ItemStackRequestAction> actions = new ArrayList<>();
+        final int requestId = inventoryTracker.peekNextItemStackRequestId();
+        final ItemStackRequestSlot output = new ItemStackRequestSlot(new FullContainerName(ContainerEnumName.CreatedOutputContainer, null), (byte) 50, requestId);
+        ItemStackRequestSlot destination;
+        if (action == ContainerInput.QUICK_MOVE) {
+            destination = null;
+            for (int i : new int[]{9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 0, 1, 2, 3, 4, 5, 6, 7, 8}) {
+                final BedrockItem existing = inventoryTracker.getInventoryContainer().getItem(i);
+                if (existing == null || existing.isEmpty()) {
+                    destination = playerInventorySlot(inventoryTracker, i);
+                    break;
+                }
+            }
+            if (destination == null) return new ArrayList<>();
+        } else {
+            if (held != null && !held.isEmpty() && (held.isDifferent(result) || held.amount() + result.amount() > MAX_STACK_SIZE)) {
+                return new ArrayList<>(); // Can't pick the result up onto a different or full cursor stack
+            }
+            destination = cursorSlot(inventoryTracker);
+        }
+        actions.add(new ItemStackRequestAction(ItemStackRequestActionType.CraftRecipe, null, null, null, null, null, null, null, recipe.netId(), 1, null, null, null, null, null, null, null));
+        actions.add(new ItemStackRequestAction(ItemStackRequestActionType.CraftResults, null, null, null, null, null, null, null, null, 1, null, null, null, null, null, null, null));
+        final BedrockItem[] grid = craftingGrid(inventoryTracker, viewContainer);
+        for (int i = 0; i < grid.length; i++) {
+            if (grid[i] == null || grid[i].isEmpty()) continue;
+            final int uiSlot = grid.length == 9 ? 32 + i : 28 + i;
+            actions.add(ItemStackRequestAction.consume(1, new ItemStackRequestSlot(new FullContainerName(ContainerEnumName.CraftingInputContainer, null), (byte) uiSlot, netIdOf(grid[i]))));
+        }
+        if (action == ContainerInput.QUICK_MOVE) {
+            actions.add(ItemStackRequestAction.place(result.amount(), output, destination));
+        } else {
+            actions.add(ItemStackRequestAction.take(result.amount(), output, destination));
+        }
+        return actions;
+    }
+
+    private static List<ItemStackRequestAction> buildDragActions(final InventoryTracker inventoryTracker, final Container viewContainer, final int rawJavaSlot, final byte button) {
+        final int stage = button & 3; // 0 start, 1 add slot, 2 end
+        if (stage == 0) {
+            inventoryTracker.dragSlots().clear();
+            return new ArrayList<>();
+        }
+        if (stage == 1) {
+            if (!inventoryTracker.dragSlots().contains((short) rawJavaSlot)) inventoryTracker.dragSlots().add((short) rawJavaSlot);
+            return new ArrayList<>();
+        }
+        final List<Short> slots = new ArrayList<>(inventoryTracker.dragSlots());
+        inventoryTracker.dragSlots().clear();
+        final BedrockItem held = inventoryTracker.getHudContainer().getItem(0);
+        if (held == null || held.isEmpty() || slots.isEmpty()) return new ArrayList<>();
+        final boolean rightDrag = (button >> 2) == 1;
+        final int perSlot = rightDrag ? 1 : Math.max(1, held.amount() / slots.size());
+        final List<ItemStackRequestAction> actions = new ArrayList<>();
+        int remaining = held.amount();
+        for (short javaSlot : slots) {
+            if (remaining <= 0) break;
+            Container container = viewContainer.type() == ContainerType.INVENTORY ? inventoryTracker.getInventoryContainer() : viewContainer;
+            int slot = javaSlot;
+            if (viewContainer.type() != ContainerType.INVENTORY) {
+                final int playerRegionStart = viewContainer.javaSlot(viewContainer.size() - 1) + 1;
+                if (slot >= playerRegionStart && slot < playerRegionStart + 36) {
+                    container = inventoryTracker.getInventoryContainer();
+                    slot = slot - playerRegionStart + 9;
+                }
+            }
+            final ItemStackRequestSlot target = requestSlotInfo(inventoryTracker, container, slot);
+            if (target == null) continue;
+            final TrackedSlot tracked = resolveRequestSlot(inventoryTracker, target);
+            final BedrockItem existing = tracked != null ? tracked.container().getItem(tracked.slot()) : null;
+            if (existing != null && !existing.isEmpty() && existing.isDifferent(held)) continue;
+            final int amount = Math.min(perSlot, remaining);
+            actions.add(ItemStackRequestAction.place(amount, cursorSlot(inventoryTracker), target));
+            remaining -= amount;
+        }
+        return actions;
     }
 
 }
