@@ -854,7 +854,7 @@ public class InventoryPackets {
             }
             return new ArrayList<>();
         }
-        Container container = viewContainer;
+        Container container = viewContainer.type() == ContainerType.INVENTORY ? inventoryTracker.getInventoryContainer() : viewContainer;
         int javaSlot = rawJavaSlot & 0xFFFF;
         final boolean containerView = viewContainer.type() != ContainerType.INVENTORY && viewContainer != inventoryTracker.getInventoryContainer();
         if (containerView) {
@@ -994,8 +994,8 @@ public class InventoryPackets {
             return inventoryRequestSlot(inventoryTracker, javaSlot);
         }
         // Open containers are anchored to block entities: Bedrock networked as level entity containers
-        final ContainerEnumName containerName = container.type() == ContainerType.CRAFTER ? ContainerEnumName.CrafterLevelEntityContainer : ContainerEnumName.LevelEntityContainer;
         final int bedrockSlot = container.bedrockSlot(javaSlot);
+        final ContainerEnumName containerName = bedrockContainerName(container.type(), bedrockSlot);
         if (bedrockSlot < 0 || bedrockSlot >= container.size()) {
             return null;
         }
@@ -1292,6 +1292,7 @@ public class InventoryPackets {
         final List<BedrockItem> candidateItems = new ArrayList<>();
         if (clickedContainer == inventory && containerView) { // Player inventory -> open container
             for (int i = 0; i < viewContainer.size(); i++) {
+                if (isFurnaceType(viewContainer.type()) && i == 2) continue; // Result slot never accepts items
                 final ItemStackRequestSlot slot = requestSlotInfo(inventoryTracker, viewContainer, viewContainer.javaSlot(i));
                 if (slot != null) {
                     candidates.add(slot);
@@ -1310,10 +1311,21 @@ public class InventoryPackets {
                     candidateItems.add(inventory.getItem(i));
                 }
             }
-        } else { // Open container -> player inventory (hotbar first, then main inventory)
-            for (int i = 0; i < 36; i++) {
+        } else { // Open container -> player inventory, in Java's order: hotbar right to left, then main inventory bottom-right to top-left
+            for (int i = 8; i >= 0; i--) {
                 candidates.add(playerInventorySlot(inventoryTracker, i));
                 candidateItems.add(inventory.getItem(i));
+            }
+            for (int i = 35; i >= 9; i--) {
+                candidates.add(playerInventorySlot(inventoryTracker, i));
+                candidateItems.add(inventory.getItem(i));
+            }
+        }
+        for (int i = candidates.size() - 1; i >= 0; i--) { // Never move a stack onto itself
+            final ItemStackRequestSlot candidate = candidates.get(i);
+            if (candidate.containerName().name() == source.containerName().name() && candidate.slot() == source.slot()) {
+                candidates.remove(i);
+                candidateItems.remove(i);
             }
         }
 
@@ -1364,6 +1376,22 @@ public class InventoryPackets {
         final PacketWrapper requestPacket = PacketWrapper.create(ServerboundBedrockPackets.ITEM_STACK_REQUEST, user);
         requestPacket.write(BedrockTypes.ITEM_STACK_REQUEST, request);
         requestPacket.sendToServer(BedrockProtocol.class);
+    }
+
+
+    private static boolean isFurnaceType(final ContainerType type) {
+        return type == ContainerType.FURNACE || type == ContainerType.BLAST_FURNACE || type == ContainerType.SMOKER;
+    }
+
+    private static ContainerEnumName bedrockContainerName(final ContainerType type, final int bedrockSlot) {
+        if (isFurnaceType(type)) {
+            return switch (bedrockSlot) {
+                case 0 -> type == ContainerType.BLAST_FURNACE ? ContainerEnumName.BlastFurnaceIngredientContainer : type == ContainerType.SMOKER ? ContainerEnumName.SmokerIngredientContainer : ContainerEnumName.FurnaceIngredientContainer;
+                case 1 -> ContainerEnumName.FurnaceFuelContainer;
+                default -> ContainerEnumName.FurnaceResultContainer;
+            };
+        }
+        return type == ContainerType.CRAFTER ? ContainerEnumName.CrafterLevelEntityContainer : ContainerEnumName.LevelEntityContainer;
     }
 
 }
