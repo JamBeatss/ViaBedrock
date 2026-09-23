@@ -70,6 +70,7 @@ import net.raphimc.viabedrock.protocol.ClientboundBedrockPackets;
 import net.raphimc.viabedrock.protocol.ServerboundBedrockPackets;
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.ComplexInventoryTransaction_Type;
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.ContainerType;
+import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.ContainerEnumName;
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.*;
 import net.raphimc.viabedrock.protocol.data.enums.java.generated.ContainerInput;
 import net.raphimc.viabedrock.protocol.data.enums.java.generated.EquipmentSlot;
@@ -1111,6 +1112,96 @@ public class InventoryPackets {
             }
         }
         return known.toArray(new String[0]);
+    }
+
+
+    private record TrackedSlot(Container container, int slot) {
+    }
+
+    private static TrackedSlot resolveRequestSlot(final InventoryTracker inventoryTracker, final ItemStackRequestSlot slot) {
+        if (slot == null || slot.containerName() == null) {
+            return null;
+        }
+        final int index = slot.slot() & 0xFF;
+        final Container container = switch (slot.containerName().name()) {
+            case InventoryContainer, HotbarContainer, CombinedHotbarAndInventoryContainer -> inventoryTracker.getInventoryContainer();
+            case CursorContainer -> inventoryTracker.getHudContainer();
+            case ArmorContainer -> inventoryTracker.getArmorContainer();
+            case OffhandContainer -> inventoryTracker.getOffhandContainer();
+            case CraftingInputContainer -> inventoryTracker.getHudContainer();
+            default -> inventoryTracker.getCurrentContainer();
+        };
+        if (container == null) {
+            return null;
+        }
+        final int resolvedIndex = slot.containerName().name() == ContainerEnumName.OffhandContainer ? 0 : index;
+        if (resolvedIndex < 0 || resolvedIndex >= container.size()) {
+            return null;
+        }
+        return new TrackedSlot(container, resolvedIndex);
+    }
+
+    private static void moveTracked(final TrackedSlot from, final TrackedSlot to, final int amount) {
+        if (from == null || to == null) {
+            return;
+        }
+        final BedrockItem source = from.container().getItem(from.slot());
+        if (source == null || source.isEmpty()) {
+            return;
+        }
+        final int moved = Math.min(amount, source.amount());
+        final BedrockItem target = to.container().getItem(to.slot());
+        if (target == null || target.isEmpty()) {
+            final BedrockItem placed = source.copy();
+            placed.setAmount(moved);
+            to.container().setItem(to.slot(), placed);
+        } else {
+            final BedrockItem merged = target.copy();
+            merged.setAmount(target.amount() + moved);
+            to.container().setItem(to.slot(), merged);
+        }
+        if (source.amount() - moved <= 0) {
+            from.container().setItem(from.slot(), BedrockItem.empty());
+        } else {
+            final BedrockItem remaining = source.copy();
+            remaining.setAmount(source.amount() - moved);
+            from.container().setItem(from.slot(), remaining);
+        }
+    }
+
+    private static void applyAcceptedActions(final InventoryTracker inventoryTracker, final List<ItemStackRequestAction> actions) {
+        for (ItemStackRequestAction action : actions) {
+            switch (action.type()) {
+                case Take, Place, PlaceInItemContainer, TakeFromItemContainer -> moveTracked(resolveRequestSlot(inventoryTracker, action.source()), resolveRequestSlot(inventoryTracker, action.destination()), action.amount() == null ? 0 : action.amount());
+                case Swap -> {
+                    final TrackedSlot a = resolveRequestSlot(inventoryTracker, action.source());
+                    final TrackedSlot b = resolveRequestSlot(inventoryTracker, action.destination());
+                    if (a != null && b != null) {
+                        final BedrockItem itemA = a.container().getItem(a.slot());
+                        final BedrockItem itemB = b.container().getItem(b.slot());
+                        a.container().setItem(a.slot(), itemB == null ? BedrockItem.empty() : itemB.copy());
+                        b.container().setItem(b.slot(), itemA == null ? BedrockItem.empty() : itemA.copy());
+                    }
+                }
+                case Drop, Destroy, Consume -> {
+                    final TrackedSlot from = resolveRequestSlot(inventoryTracker, action.source());
+                    if (from != null && action.amount() != null) {
+                        final BedrockItem source = from.container().getItem(from.slot());
+                        if (source != null && !source.isEmpty()) {
+                            if (source.amount() - action.amount() <= 0) {
+                                from.container().setItem(from.slot(), BedrockItem.empty());
+                            } else {
+                                final BedrockItem remaining = source.copy();
+                                remaining.setAmount(source.amount() - action.amount());
+                                from.container().setItem(from.slot(), remaining);
+                            }
+                        }
+                    }
+                }
+                default -> {
+                }
+            }
+        }
     }
 
 }

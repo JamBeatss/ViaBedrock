@@ -75,6 +75,16 @@ public class InventoryTracker extends StoredObject {
     /**
      * Allocates the next item stack request id. The Bedrock server expects strictly increasing ids.
      */
+    private final java.util.Map<Integer, java.util.List<net.raphimc.viabedrock.protocol.model.inventory.ItemStackRequestAction>> pendingItemStackRequests = new java.util.HashMap<>();
+
+    public void trackItemStackRequest(final int requestId, final java.util.List<net.raphimc.viabedrock.protocol.model.inventory.ItemStackRequestAction> actions) {
+        this.pendingItemStackRequests.put(requestId, actions);
+    }
+
+    public java.util.List<net.raphimc.viabedrock.protocol.model.inventory.ItemStackRequestAction> takePendingItemStackRequest(final int requestId) {
+        return this.pendingItemStackRequests.remove(requestId);
+    }
+
     public int nextItemStackRequestId() {
         final int id = this.nextItemStackRequestId;
         this.nextItemStackRequestId -= 2;
