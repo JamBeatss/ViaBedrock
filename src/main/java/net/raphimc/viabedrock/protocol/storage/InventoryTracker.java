@@ -65,7 +65,7 @@ public class InventoryTracker extends StoredObject {
     private IntObjectPair<Form> currentForm = null;
 
     // Item stack request bookkeeping (server-auth inventory)
-    private int nextItemStackRequestId = 1;
+    private int nextItemStackRequestId = -1; // client generated net ids are negative and odd: -1, -3, -5, ...
     private final List<CreativeItem> creativeItems = new ArrayList<>();
 
     public InventoryTracker(final UserConnection user) {
@@ -76,7 +76,9 @@ public class InventoryTracker extends StoredObject {
      * Allocates the next item stack request id. The Bedrock server expects strictly increasing ids.
      */
     public int nextItemStackRequestId() {
-        return this.nextItemStackRequestId++;
+        final int id = this.nextItemStackRequestId;
+        this.nextItemStackRequestId -= 2;
+        return id;
     }
 
     /**
