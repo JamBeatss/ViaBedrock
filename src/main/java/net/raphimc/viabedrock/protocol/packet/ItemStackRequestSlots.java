@@ -22,6 +22,7 @@ import net.lenni0451.mcstructs_bedrock.forms.elements.*;
 import net.raphimc.viabedrock.ViaBedrock;
 import net.raphimc.viabedrock.api.model.container.Container;
 import net.raphimc.viabedrock.api.model.container.CraftingTableContainer;
+import net.raphimc.viabedrock.api.model.container.UiContainer;
 import net.raphimc.viabedrock.api.model.container.player.InventoryContainer;
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.*;
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.ContainerEnumName;
@@ -34,6 +35,7 @@ import net.raphimc.viabedrock.protocol.storage.*;
 import static net.raphimc.viabedrock.protocol.packet.ContainerClicks.*;
 import static net.raphimc.viabedrock.protocol.packet.CraftingTranslator.*;
 import static net.raphimc.viabedrock.protocol.packet.ItemStackResponses.*;
+import static net.raphimc.viabedrock.protocol.packet.SpecialScreenPackets.*;
 
 /**
  * Addresses Java container slots as Bedrock item stack request slots (container names, UI slot offsets, net ids).
@@ -44,9 +46,29 @@ final class ItemStackRequestSlots {
     }
 
     // Slot offsets inside the Bedrock player UI container, as the vanilla client addresses them
+    static final int UI_ANVIL_INPUT = 1;
+    static final int UI_ANVIL_MATERIAL = 2;
+    static final int UI_STONECUTTER_INPUT = 3;
+    static final int UI_TRADE2_INGREDIENT_1 = 4;
+    static final int UI_TRADE2_INGREDIENT_2 = 5;
+    static final int UI_TRADE_INGREDIENT_1 = 6;
+    static final int UI_TRADE_INGREDIENT_2 = 7;
+    static final int UI_LOOM_INPUT = 9;
+    static final int UI_LOOM_DYE = 10;
+    static final int UI_LOOM_MATERIAL = 11;
+    static final int UI_CARTOGRAPHY_INPUT = 12;
+    static final int UI_CARTOGRAPHY_ADDITIONAL = 13;
+    static final int UI_ENCHANTING_INPUT = 14;
+    static final int UI_ENCHANTING_MATERIAL = 15;
+    static final int UI_GRINDSTONE_INPUT = 16;
+    static final int UI_GRINDSTONE_ADDITIONAL = 17;
+    static final int UI_BEACON_PAYMENT = 27;
     static final int UI_CRAFTING_2X2_FIRST = 28; // 28-31
     static final int UI_CRAFTING_3X3_FIRST = 32; // 32-40
     static final int UI_CREATED_OUTPUT = 50;
+    static final int UI_SMITHING_INPUT = 51;
+    static final int UI_SMITHING_MATERIAL = 52;
+    static final int UI_SMITHING_TEMPLATE = 53;
 
     // The vanilla client addresses the offhand as slot 1 (a known client quirk since 1.19.70)
     static final int OFFHAND_REQUEST_SLOT = 1;
@@ -106,7 +128,12 @@ final class ItemStackRequestSlots {
         if (bedrockSlot < 0 || bedrockSlot >= container.size()) {
             return null;
         }
-        final ContainerEnumName containerName = bedrockContainerName(container.type(), bedrockSlot);
+        if (container instanceof UiContainer uiContainer) { // Items live in the player's UI container at fixed offsets
+            final int uiSlot = uiContainer.uiSlot(bedrockSlot);
+            if (uiSlot == UiContainer.RESULT_PREVIEW) return null; // Result preview: only reachable through the created output container
+            return new ItemStackRequestSlot(new FullContainerName(uiContainer.containerName(bedrockSlot), null), (byte) uiSlot, netIdOf(container.getItem(bedrockSlot)));
+        }
+        final ContainerEnumName containerName = container.type() == ContainerType.CONTAINER ? inventoryTracker.getLevelEntityContainerName() : bedrockContainerName(container.type(), bedrockSlot);
         return new ItemStackRequestSlot(new FullContainerName(containerName, null), (byte) bedrockSlot, netIdOf(container.getItem(bedrockSlot)));
     }
 
@@ -141,7 +168,7 @@ final class ItemStackRequestSlots {
         if (container == null) {
             return null;
         }
-        final int resolvedIndex = slot.containerName().name() == ContainerEnumName.OffhandContainer ? 0 : container instanceof CraftingTableContainer ? index - UI_CRAFTING_3X3_FIRST : index;
+        final int resolvedIndex = slot.containerName().name() == ContainerEnumName.OffhandContainer ? 0 : container instanceof CraftingTableContainer ? index - UI_CRAFTING_3X3_FIRST : container instanceof UiContainer uiContainer ? uiContainer.slotOfUiSlot(index) : index;
         if (resolvedIndex < 0 || resolvedIndex >= container.size()) {
             return null;
         }
@@ -166,6 +193,13 @@ final class ItemStackRequestSlots {
                 case 0 -> type == ContainerType.BLAST_FURNACE ? ContainerEnumName.BlastFurnaceIngredientContainer : type == ContainerType.SMOKER ? ContainerEnumName.SmokerIngredientContainer : ContainerEnumName.FurnaceIngredientContainer;
                 case 1 -> ContainerEnumName.FurnaceFuelContainer;
                 default -> ContainerEnumName.FurnaceResultContainer;
+            };
+        }
+        if (type == ContainerType.BREWING_STAND) {
+            return switch (bedrockSlot) {
+                case 0 -> ContainerEnumName.BrewingStandInputContainer;
+                case 4 -> ContainerEnumName.BrewingStandFuelContainer;
+                default -> ContainerEnumName.BrewingStandResultContainer;
             };
         }
         return type == ContainerType.CRAFTER ? ContainerEnumName.CrafterLevelEntityContainer : ContainerEnumName.LevelEntityContainer;

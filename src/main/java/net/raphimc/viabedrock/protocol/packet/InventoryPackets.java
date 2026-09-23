@@ -58,10 +58,12 @@ import net.lenni0451.mcstructs_bedrock.forms.types.ModalForm;
 import net.lenni0451.mcstructs_bedrock.text.utils.BedrockTextUtils;
 import net.raphimc.viabedrock.ViaBedrock;
 import net.raphimc.viabedrock.api.chunk.BedrockBlockEntity;
+import net.raphimc.viabedrock.api.model.container.BrewingStandContainer;
 import net.raphimc.viabedrock.api.model.container.ChestContainer;
 import net.raphimc.viabedrock.api.model.container.Container;
 import net.raphimc.viabedrock.api.model.container.CraftingTableContainer;
 import net.raphimc.viabedrock.api.model.container.SimpleContainer;
+import net.raphimc.viabedrock.api.model.container.UiContainer;
 import net.raphimc.viabedrock.api.model.container.player.InventoryContainer;
 import net.raphimc.viabedrock.api.model.entity.Entity;
 import net.raphimc.viabedrock.api.util.PacketFactory;
@@ -71,6 +73,7 @@ import net.raphimc.viabedrock.protocol.ClientboundBedrockPackets;
 import net.raphimc.viabedrock.protocol.ServerboundBedrockPackets;
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.ComplexInventoryTransaction_Type;
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.*;
+import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.ContainerEnumName;
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.ContainerType;
 import net.raphimc.viabedrock.protocol.data.enums.java.generated.ContainerInput;
 import net.raphimc.viabedrock.protocol.data.enums.java.generated.EquipmentSlot;
@@ -96,6 +99,7 @@ import static net.raphimc.viabedrock.protocol.packet.ContainerClicks.*;
 import static net.raphimc.viabedrock.protocol.packet.CraftingTranslator.*;
 import static net.raphimc.viabedrock.protocol.packet.ItemStackRequestSlots.*;
 import static net.raphimc.viabedrock.protocol.packet.ItemStackResponses.*;
+import static net.raphimc.viabedrock.protocol.packet.SpecialScreenPackets.*;
 
 public class InventoryPackets {
 
@@ -221,6 +225,10 @@ public class InventoryPackets {
             wrapper.read(BedrockTypes.VAR_LONG); // entity unique id
             ViaBedrock.getPlatform().getLogger().log(Level.FINE, "CONTAINER_OPEN from server: id=" + containerId + " type=" + type + " position=" + position);
 
+            if (type == ContainerType.TRADE && inventoryTracker.getCurrentContainer() instanceof UiContainer open && open.type() == ContainerType.TRADE && open.containerId() == containerId) {
+                wrapper.cancel(); // Already opened by UPDATE_TRADE
+                return;
+            }
             if (inventoryTracker.isAnyScreenOpen()) {
                 ViaBedrock.getPlatform().getLogger().log(Level.WARNING, "Server tried to open container while another container is open");
                 PacketFactory.sendBedrockContainerClose(wrapper.user(), (byte) -1, ContainerType.NONE);
@@ -247,6 +255,9 @@ public class InventoryPackets {
                         size = 54; // Double chest
                     }
                     container = new ChestContainer(wrapper.user(), containerId, title, position, size);
+                    final String blockTag = blockStateRewriter.tag(chunkTracker.getBlockState(position));
+                    // Barrels and shulker boxes are addressed with their own container names in item stack requests
+                    inventoryTracker.setLevelEntityContainerName(blockTag != null && blockTag.contains("barrel") ? ContainerEnumName.BarrelContainer : blockTag != null && blockTag.contains("shulker") ? ContainerEnumName.ShulkerBoxContainer : ContainerEnumName.LevelEntityContainer);
                 }
                 case MINECART_CHEST, CHEST_BOAT -> container = new SimpleContainer(wrapper.user(), containerId, type, title, position, 27);
                 case WORKBENCH -> container = new CraftingTableContainer(wrapper.user(), containerId, new TranslationComponent("container.crafting"), position, blockTags("crafting_table")); // Java slot 0 is the result slot
@@ -254,20 +265,20 @@ public class InventoryPackets {
                 case FURNACE -> container = new SimpleContainer(wrapper.user(), containerId, type, title, position, 3, blockTags("furnace"));
                 case BLAST_FURNACE -> container = new SimpleContainer(wrapper.user(), containerId, type, title, position, 3, blockTags("blast_furnace"));
                 case SMOKER -> container = new SimpleContainer(wrapper.user(), containerId, type, title, position, 3, blockTags("smoker"));
-                case ANVIL -> container = new SimpleContainer(wrapper.user(), containerId, type, title, position, 3, blockTags("anvil"));
-                case GRINDSTONE -> container = new SimpleContainer(wrapper.user(), containerId, type, title, position, 3, blockTags("grindstone"));
-                case ENCHANTMENT -> container = new SimpleContainer(wrapper.user(), containerId, type, title, position, 2, blockTags("enchanting_table"));
-                case BREWING_STAND -> container = new SimpleContainer(wrapper.user(), containerId, type, title, position, 5, blockTags("brewing_stand"));
+                case ANVIL -> container = new UiContainer(wrapper.user(), containerId, type, title, position, new int[]{UI_ANVIL_INPUT, UI_ANVIL_MATERIAL, UiContainer.RESULT_PREVIEW}, new ContainerEnumName[]{ContainerEnumName.AnvilInputContainer, ContainerEnumName.AnvilMaterialContainer, ContainerEnumName.AnvilResultPreviewContainer}, blockTags("anvil"));
+                case GRINDSTONE -> container = new UiContainer(wrapper.user(), containerId, type, title, position, new int[]{UI_GRINDSTONE_INPUT, UI_GRINDSTONE_ADDITIONAL, UiContainer.RESULT_PREVIEW}, new ContainerEnumName[]{ContainerEnumName.GrindstoneInputContainer, ContainerEnumName.GrindstoneAdditionalContainer, ContainerEnumName.GrindstoneResultPreviewContainer}, blockTags("grindstone"));
+                case ENCHANTMENT -> container = new UiContainer(wrapper.user(), containerId, type, title, position, new int[]{UI_ENCHANTING_INPUT, UI_ENCHANTING_MATERIAL}, new ContainerEnumName[]{ContainerEnumName.EnchantingInputContainer, ContainerEnumName.EnchantingMaterialContainer}, blockTags("enchanting_table"));
+                case BREWING_STAND -> container = new BrewingStandContainer(wrapper.user(), containerId, title, position, blockTags("brewing_stand"));
                 case DISPENSER -> container = new SimpleContainer(wrapper.user(), containerId, type, title, position, 9, blockTags("dispenser"));
                 case DROPPER -> container = new SimpleContainer(wrapper.user(), containerId, type, title, position, 9, blockTags("dropper"));
                 case HOPPER, MINECART_HOPPER -> container = new SimpleContainer(wrapper.user(), containerId, type, title, position, 5, blockTags("hopper"));
-                case BEACON -> container = new SimpleContainer(wrapper.user(), containerId, type, title, position, 1, blockTags("beacon"));
-                case TRADE -> container = new SimpleContainer(wrapper.user(), containerId, type, title, position, 3);
-                case LOOM -> container = new SimpleContainer(wrapper.user(), containerId, type, title, position, 4, blockTags("loom"));
+                case BEACON -> container = new UiContainer(wrapper.user(), containerId, type, title, position, new int[]{UI_BEACON_PAYMENT}, new ContainerEnumName[]{ContainerEnumName.BeaconPaymentContainer}, blockTags("beacon"));
+                case TRADE -> container = tradeContainer(wrapper.user(), containerId, title, null, true);
+                case LOOM -> container = new UiContainer(wrapper.user(), containerId, type, title, position, new int[]{UI_LOOM_INPUT, UI_LOOM_DYE, UI_LOOM_MATERIAL, UiContainer.RESULT_PREVIEW}, new ContainerEnumName[]{ContainerEnumName.LoomInputContainer, ContainerEnumName.LoomDyeContainer, ContainerEnumName.LoomMaterialContainer, ContainerEnumName.LoomResultPreviewContainer}, blockTags("loom"));
                 case LECTERN -> container = new SimpleContainer(wrapper.user(), containerId, type, title, position, 1, blockTags("lectern"));
-                case STONECUTTER -> container = new SimpleContainer(wrapper.user(), containerId, type, title, position, 2, blockTags("stonecutter"));
-                case CARTOGRAPHY -> container = new SimpleContainer(wrapper.user(), containerId, type, title, position, 3, blockTags("cartography_table"));
-                case SMITHING_TABLE -> container = new SimpleContainer(wrapper.user(), containerId, type, title, position, 4, blockTags("smithing_table"));
+                case STONECUTTER -> container = new UiContainer(wrapper.user(), containerId, type, title, position, new int[]{UI_STONECUTTER_INPUT, UiContainer.RESULT_PREVIEW}, new ContainerEnumName[]{ContainerEnumName.StonecutterInputContainer, ContainerEnumName.StonecutterResultPreviewContainer}, blockTags("stonecutter"));
+                case CARTOGRAPHY -> container = new UiContainer(wrapper.user(), containerId, type, title, position, new int[]{UI_CARTOGRAPHY_INPUT, UI_CARTOGRAPHY_ADDITIONAL, UiContainer.RESULT_PREVIEW}, new ContainerEnumName[]{ContainerEnumName.CartographyInputContainer, ContainerEnumName.CartographyAdditionalContainer, ContainerEnumName.CartographyResultPreviewContainer}, blockTags("cartography_table"));
+                case SMITHING_TABLE -> container = new UiContainer(wrapper.user(), containerId, type, title, position, new int[]{UI_SMITHING_TEMPLATE, UI_SMITHING_INPUT, UI_SMITHING_MATERIAL, UiContainer.RESULT_PREVIEW}, new ContainerEnumName[]{ContainerEnumName.SmithingTableTemplateContainer, ContainerEnumName.SmithingTableInputContainer, ContainerEnumName.SmithingTableMaterialContainer, ContainerEnumName.SmithingTableResultPreviewContainer}, blockTags("smithing_table"));
                 case NONE, CAULDRON, JUKEBOX, ARMOR, HAND, HUD, DECORATED_POT -> { // Bedrock client can't open these containers
                     wrapper.cancel();
                     return;
@@ -288,6 +299,18 @@ public class InventoryPackets {
             }
             wrapper.write(Types.VAR_INT, javaMenuType); // type
             wrapper.write(Types.TAG, TextUtil.textComponentToNbt(title)); // title
+            if (type == ContainerType.BEACON) { // The beacon screen needs its data after it opened
+                wrapper.send(BedrockProtocol.class);
+                wrapper.cancel();
+                int primary = -1, secondary = -1;
+                if (blockEntity != null && blockEntity.tag() != null) {
+                    primary = javaEffectId(blockEntity.tag().getInt("primary"));
+                    secondary = javaEffectId(blockEntity.tag().getInt("secondary"));
+                }
+                sendJavaContainerData(wrapper.user(), container, 0, 4); // pyramid levels: enables every effect button, the server checks the real pyramid
+                sendJavaContainerData(wrapper.user(), container, 1, primary + 1); // primary effect (registry id + 1, 0 = none)
+                sendJavaContainerData(wrapper.user(), container, 2, secondary + 1); // secondary effect
+            }
         });
         protocol.registerClientbound(ClientboundBedrockPackets.CONTAINER_CLOSE, ClientboundPackets26_3.CONTAINER_CLOSE, new PacketHandlers() {
             @Override
@@ -325,6 +348,16 @@ public class InventoryPackets {
             final Container container = inventoryTracker.getContainerClientbound((byte) containerId, containerName, storageItem);
             ViaBedrock.getPlatform().getLogger().log(Level.FINE, "INVENTORY_CONTENT from server: containerId=" + containerId + " items=" + items.length + " name=" + containerName + " -> " + (container == null ? "unknown container" : container.type()));
             if (container != null && container.setItems(items)) {
+                if (container.type() == ContainerType.HUD && inventoryTracker.getCurrentContainer() instanceof UiContainer uiContainer) {
+                    for (int i = 0; i < uiContainer.size(); i++) {
+                        final int uiSlot = uiContainer.uiSlot(i);
+                        if (uiSlot >= 0 && uiSlot < items.length) {
+                            uiContainer.setItem(i, items[uiSlot].copy());
+                        }
+                    }
+                    PacketFactory.sendJavaContainerSetContent(wrapper.user(), uiContainer);
+                    updateUiScreenResult(wrapper.user(), inventoryTracker);
+                }
                 PacketFactory.writeJavaContainerSetContent(wrapper, container);
             } else {
                 wrapper.cancel();
@@ -341,6 +374,20 @@ public class InventoryPackets {
             final InventoryTracker inventoryTracker = wrapper.user().get(InventoryTracker.class);
             final Container container = inventoryTracker.getContainerClientbound((byte) containerId, containerName, storageItem);
             ViaBedrock.getPlatform().getLogger().log(Level.FINE, "INVENTORY_SLOT from server: containerId=" + containerId + " slot=" + slot + " name=" + containerName + " item=" + (item.isEmpty() ? "empty" : item.identifier() + " x" + item.amount() + " netId=" + item.netId()) + " -> " + (container == null ? "unknown container" : container.type()));
+            if (container != null && container.type() == ContainerType.HUD && inventoryTracker.getCurrentContainer() instanceof UiContainer uiContainer && uiContainer.slotOfUiSlot(slot) != -1) {
+                // Anvil, enchanting, beacon, trade, ... items live in the UI container: show them in the open Java screen
+                final int index = uiContainer.slotOfUiSlot(slot);
+                container.setItem(slot, item);
+                uiContainer.setItem(index, item.copy());
+                wrapper.write(Types.VAR_INT, (int) uiContainer.javaContainerId()); // container id
+                wrapper.write(Types.VAR_INT, 0); // revision
+                wrapper.write(Types.SHORT, (short) uiContainer.javaSlot(index)); // slot
+                wrapper.write(VersionedTypes.V26_3.item, uiContainer.getJavaItem(index)); // item
+                wrapper.send(BedrockProtocol.class);
+                wrapper.cancel();
+                updateUiScreenResult(wrapper.user(), inventoryTracker);
+                return;
+            }
             if (container != null && container.setItem(slot, item)) {
                 if (container.type() == ContainerType.HUD && slot == 0) { // cursor item
                     wrapper.setPacketType(ClientboundPackets26_3.SET_CURSOR_ITEM);
@@ -576,6 +623,7 @@ public class InventoryPackets {
             }
             processContainerClick(wrapper.user(), containerId, revision, slot, button, action);
         });
+        SpecialScreenPackets.register(protocol);
         protocol.registerServerbound(ServerboundPackets26_3.SET_CREATIVE_MODE_SLOT, null, wrapper -> {
             wrapper.cancel();
             final GameSessionStorage gameSession = wrapper.user().get(GameSessionStorage.class);

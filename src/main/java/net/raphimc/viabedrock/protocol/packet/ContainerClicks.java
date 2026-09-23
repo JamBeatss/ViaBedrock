@@ -24,6 +24,7 @@ import net.lenni0451.mcstructs_bedrock.forms.elements.*;
 import net.raphimc.viabedrock.ViaBedrock;
 import net.raphimc.viabedrock.api.model.container.Container;
 import net.raphimc.viabedrock.api.model.container.CraftingTableContainer;
+import net.raphimc.viabedrock.api.model.container.UiContainer;
 import net.raphimc.viabedrock.api.util.PacketFactory;
 import net.raphimc.viabedrock.protocol.BedrockProtocol;
 import net.raphimc.viabedrock.protocol.ServerboundBedrockPackets;
@@ -53,6 +54,7 @@ import java.util.logging.Level;
 import static net.raphimc.viabedrock.protocol.packet.CraftingTranslator.*;
 import static net.raphimc.viabedrock.protocol.packet.ItemStackRequestSlots.*;
 import static net.raphimc.viabedrock.protocol.packet.ItemStackResponses.*;
+import static net.raphimc.viabedrock.protocol.packet.SpecialScreenPackets.*;
 
 /**
  * Translates Java container clicks (pickup, shift-click, drag, throw) into item stack requests or legacy inventory transactions.
@@ -95,6 +97,12 @@ final class ContainerClicks {
                 container = inventoryTracker.getInventoryContainer();
                 javaSlot = javaSlot - playerRegionStart + 9; // Java player inventory slot numbering (9-35 main, 36-44 hotbar)
             }
+        }
+        if (viewContainer instanceof UiContainer screen && container == viewContainer && javaSlot == screen.resultSlot()) {
+            if (action != ContainerInput.PICKUP && action != ContainerInput.QUICK_MOVE) {
+                return new ArrayList<>();
+            }
+            return buildScreenResultActions(inventoryTracker, screen, action);
         }
         final boolean craftingView = viewContainer instanceof CraftingTableContainer || viewContainer.type() == ContainerType.INVENTORY;
         if (craftingView && javaSlot == 0 && (action == ContainerInput.PICKUP || action == ContainerInput.QUICK_MOVE)) {
@@ -381,6 +389,7 @@ final class ContainerClicks {
         if (clickedContainer == inventory && containerView) { // Player inventory -> open container
             for (int i = 0; i < viewContainer.size(); i++) {
                 if (isFurnaceType(viewContainer.type()) && i == 2) continue; // Result slot never accepts items
+                if (viewContainer.type() == ContainerType.ENCHANTMENT && i != ("minecraft:lapis_lazuli".equals(itemIdentifier(inventoryTracker, moving)) ? 1 : 0)) continue; // Lapis goes to its own slot
                 final ItemStackRequestSlot slot = requestSlotInfo(inventoryTracker, viewContainer, viewContainer.javaSlot(i));
                 if (slot != null) {
                     candidates.add(slot);
@@ -427,6 +436,9 @@ final class ContainerClicks {
         }
 
         int remaining = moving.amount();
+        if (clickedContainer == inventory && containerView && (viewContainer.type() == ContainerType.BEACON || (viewContainer.type() == ContainerType.ENCHANTMENT && !"minecraft:lapis_lazuli".equals(itemIdentifier(inventoryTracker, moving))))) {
+            remaining = Math.min(remaining, 1); // Beacon payment and enchanting input hold a single item
+        }
         final int maxStack = maxStackOf(inventoryTracker, moving);
         for (int i = 0; i < candidates.size() && remaining > 0; i++) { // Merge into matching stacks first
             final BedrockItem existing = candidateItems.get(i);
@@ -477,12 +489,13 @@ final class ContainerClicks {
 
     /**
      * Sends an item stack request and tracks it, so the accepted response can be applied to the tracked containers.
-     * Every request goes through here: clicks and creative mode.
+     * Every request goes through here: clicks, special screens and creative mode.
      */
     static void sendItemStackRequest(final UserConnection user, final InventoryTracker inventoryTracker, final List<ItemStackRequestAction> actions) {
         if (actions == null || actions.isEmpty()) return;
-        final ItemStackRequest request = new ItemStackRequest(inventoryTracker.nextItemStackRequestId(), actions, new ArrayList<>(), 0);
-        ViaBedrock.getPlatform().getLogger().log(Level.FINE, "Item stack request: id=" + request.requestId() + " actions=" + actions);
+        final List<String> filterStrings = inventoryTracker.takePendingFilterStrings();
+        final ItemStackRequest request = new ItemStackRequest(inventoryTracker.nextItemStackRequestId(), actions, filterStrings, filterStrings.isEmpty() ? 0 : TextProcessingEventOrigin.AnvilText.getValue());
+        ViaBedrock.getPlatform().getLogger().log(Level.FINE, "Item stack request: id=" + request.requestId() + " actions=" + actions + (request.stringsToFilter().isEmpty() ? "" : " strings=" + request.stringsToFilter()));
         inventoryTracker.trackItemStackRequest(request.requestId(), actions, snapshotSources(inventoryTracker, actions));
         final PacketWrapper requestPacket = PacketWrapper.create(ServerboundBedrockPackets.ITEM_STACK_REQUEST, user);
         requestPacket.write(BedrockTypes.ITEM_STACK_REQUEST, request);

@@ -17,6 +17,7 @@
  */
 package net.raphimc.viabedrock.protocol.packet;
 
+import com.viaversion.nbt.tag.CompoundTag;
 import com.viaversion.viaversion.api.protocol.packet.PacketWrapper;
 import com.viaversion.viaversion.api.type.types.version.VersionedTypes;
 import com.viaversion.viaversion.protocols.v26_2to26_3.packet.ClientboundPackets26_3;
@@ -24,6 +25,7 @@ import net.lenni0451.mcstructs_bedrock.forms.elements.*;
 import net.raphimc.viabedrock.ViaBedrock;
 import net.raphimc.viabedrock.api.model.container.Container;
 import net.raphimc.viabedrock.api.model.container.CraftingTableContainer;
+import net.raphimc.viabedrock.api.model.container.UiContainer;
 import net.raphimc.viabedrock.api.util.PacketFactory;
 import net.raphimc.viabedrock.protocol.BedrockProtocol;
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.*;
@@ -43,6 +45,7 @@ import java.util.logging.Level;
 import static net.raphimc.viabedrock.protocol.packet.ContainerClicks.*;
 import static net.raphimc.viabedrock.protocol.packet.CraftingTranslator.*;
 import static net.raphimc.viabedrock.protocol.packet.ItemStackRequestSlots.*;
+import static net.raphimc.viabedrock.protocol.packet.SpecialScreenPackets.*;
 
 /**
  * Applies the server's item stack responses to the tracked containers and pushes the result to the Java client.
@@ -80,7 +83,7 @@ final class ItemStackResponses {
                         continue;
                     }
                     for (ItemStackResponse.Slot responseSlot : responseContainer.slots()) {
-                        final int slotIndex = container == inventoryTracker.getOffhandContainer() ? 0 : container instanceof CraftingTableContainer ? (responseSlot.slot() & 0xFF) - UI_CRAFTING_3X3_FIRST : responseSlot.slot() & 0xFF; // The second slot field is the authoritative slot index (offhand is addressed as slot 1, the crafting grid as 32-40)
+                        final int slotIndex = container == inventoryTracker.getOffhandContainer() ? 0 : container instanceof CraftingTableContainer ? (responseSlot.slot() & 0xFF) - UI_CRAFTING_3X3_FIRST : container instanceof UiContainer uiContainer ? uiContainer.slotOfUiSlot(responseSlot.slot() & 0xFF) : responseSlot.slot() & 0xFF; // The second slot field is the authoritative slot index (offhand is addressed as slot 1, the crafting grid as 32-40)
                         if (slotIndex < 0 || slotIndex >= container.size()) {
                             continue;
                         }
@@ -100,6 +103,9 @@ final class ItemStackResponses {
                         final BedrockItem updated = tracked.copy();
                         updated.setAmount(responseSlot.amount());
                         updated.setNetId(responseSlot.serverNetId() > 0 ? responseSlot.serverNetId() : tracked.netId());
+                        if (responseSlot.customName() != null && !responseSlot.customName().isEmpty()) { // Anvil renames report the new name here
+                            setCustomName(updated, responseSlot.customName());
+                        }
                         container.setItem(slotIndex, updated);
                         if (!changedContainers.contains(container)) {
                             changedContainers.add(container);
@@ -119,6 +125,7 @@ final class ItemStackResponses {
             acceptedCursorPacket.write(VersionedTypes.V26_3.item, inventoryTracker.getHudContainer().getJavaItem(0)); // cursor item
             acceptedCursorPacket.send(BedrockProtocol.class);
             updateCraftingResult(wrapper.user(), inventoryTracker);
+            updateUiScreenResult(wrapper.user(), inventoryTracker);
             drainQueuedClicks(wrapper.user(), inventoryTracker);
             return;
         }
@@ -136,6 +143,7 @@ final class ItemStackResponses {
         inventoryTracker.queuedClicks().clear(); // Queued clicks were built on the rejected state
         inventoryTracker.takeCreatedOutputPreview();
         updateCraftingResult(wrapper.user(), inventoryTracker);
+        updateUiScreenResult(wrapper.user(), inventoryTracker);
     }
 
     static List<BedrockItem> snapshotSources(final InventoryTracker inventoryTracker, final List<ItemStackRequestAction> actions) {
@@ -227,6 +235,18 @@ final class ItemStackResponses {
                 }
             }
         }
+    }
+
+    static void setCustomName(final BedrockItem item, final String name) {
+        if (item.tag() == null) {
+            item.setTag(new CompoundTag());
+        }
+        CompoundTag display = item.tag().getCompoundTag("display");
+        if (display == null) {
+            display = new CompoundTag();
+            item.tag().put("display", display);
+        }
+        display.putString("Name", name);
     }
 
 }

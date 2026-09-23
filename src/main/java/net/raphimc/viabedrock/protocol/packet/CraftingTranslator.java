@@ -48,6 +48,7 @@ import java.util.logging.Level;
 import static net.raphimc.viabedrock.protocol.packet.ContainerClicks.*;
 import static net.raphimc.viabedrock.protocol.packet.ItemStackRequestSlots.*;
 import static net.raphimc.viabedrock.protocol.packet.ItemStackResponses.*;
+import static net.raphimc.viabedrock.protocol.packet.SpecialScreenPackets.*;
 
 /**
  * Reads Bedrock crafting recipes, matches the crafting grid and builds craft requests.

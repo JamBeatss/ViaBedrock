@@ -84,12 +84,20 @@ public class InventoryTracker extends StoredObject {
         }
     };
     private final ArrayDeque<QueuedClick> queuedClicks = new ArrayDeque<>();
+    private List<String> pendingFilterStrings = new ArrayList<>();
     private BedrockItem createdOutputPreview;
+    private ContainerEnumName levelEntityContainerName = ContainerEnumName.LevelEntityContainer; // Barrels and shulker boxes use their own name
 
     // Crafting
     private final List<Recipe> recipes = new ArrayList<>();
     private Recipe matchedRecipe;
     private final List<Short> dragSlots = new ArrayList<>();
+
+    // Anvil, enchanting table, villager trading
+    private String anvilName;
+    private final List<EnchantOption> enchantOptions = new ArrayList<>();
+    private final List<TradeOffer> tradeOffers = new ArrayList<>();
+    private int selectedTrade = -1;
 
     public InventoryTracker(final UserConnection user) {
         super(user);
@@ -138,6 +146,19 @@ public class InventoryTracker extends StoredObject {
     }
 
     /**
+     * Text the next item stack request carries for server side filtering (the anvil rename text).
+     */
+    public void setPendingFilterStrings(final List<String> filterStrings) {
+        this.pendingFilterStrings = new ArrayList<>(filterStrings);
+    }
+
+    public List<String> takePendingFilterStrings() {
+        final List<String> filterStrings = this.pendingFilterStrings;
+        this.pendingFilterStrings = new ArrayList<>();
+        return filterStrings;
+    }
+
+    /**
      * The item a special screen request will create (anvil output, enchanted item, trade result). Consumed by the next request snapshot.
      */
     public void setCreatedOutputPreview(final BedrockItem createdOutputPreview) {
@@ -148,6 +169,14 @@ public class InventoryTracker extends StoredObject {
         final BedrockItem preview = this.createdOutputPreview;
         this.createdOutputPreview = null;
         return preview;
+    }
+
+    public ContainerEnumName getLevelEntityContainerName() {
+        return this.levelEntityContainerName;
+    }
+
+    public void setLevelEntityContainerName(final ContainerEnumName levelEntityContainerName) {
+        this.levelEntityContainerName = levelEntityContainerName;
     }
 
     // ---- Crafting ----
@@ -168,6 +197,32 @@ public class InventoryTracker extends StoredObject {
         return this.dragSlots;
     }
 
+    // ---- Anvil, enchanting table, villager trading ----
+
+    public String anvilName() {
+        return this.anvilName;
+    }
+
+    public void setAnvilName(final String anvilName) {
+        this.anvilName = anvilName;
+    }
+
+    public List<EnchantOption> enchantOptions() {
+        return this.enchantOptions;
+    }
+
+    public List<TradeOffer> tradeOffers() {
+        return this.tradeOffers;
+    }
+
+    public int selectedTrade() {
+        return this.selectedTrade;
+    }
+
+    public void setSelectedTrade(final int selectedTrade) {
+        this.selectedTrade = selectedTrade;
+    }
+
     public record PendingItemStackRequest(List<ItemStackRequestAction> actions, List<BedrockItem> sourceSnapshots, long sentAt) {
     }
 
@@ -181,6 +236,12 @@ public class InventoryTracker extends StoredObject {
     }
 
     public record Recipe(int netId, String tag, boolean shaped, int width, int height, List<Ingredient> ingredients, BedrockItem result, boolean assumeSymmetry) {
+    }
+
+    public record EnchantOption(int cost, int netId, List<int[]> enchants) { // enchants: {bedrock enchant type, level}
+    }
+
+    public record TradeOffer(BedrockItem buyA, BedrockItem buyB, BedrockItem sell, int netId, boolean outOfStock) {
     }
 
     /**
@@ -346,6 +407,10 @@ public class InventoryTracker extends StoredObject {
         }
         this.currentContainer = container;
         this.queuedClicks.clear(); // Never replay a click against a newly opened container that reuses the id
+        this.anvilName = null;
+        this.enchantOptions.clear();
+        this.tradeOffers.clear();
+        this.selectedTrade = -1;
         this.createdOutputPreview = null;
     }
 
