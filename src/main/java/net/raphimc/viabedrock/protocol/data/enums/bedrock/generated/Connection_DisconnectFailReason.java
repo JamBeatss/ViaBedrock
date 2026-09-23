@@ -154,6 +154,8 @@ public enum Connection_DisconnectFailReason {
     HostAcceptsNoTypeOfAuth(145),
     NotAuthenticatedFastFail(146),
     EditorNotAllowed(147),
+    MissingStructureData(148),
+    UnsupportedTransport(149),
     ;
 
     private static final Int2ObjectMap<Connection_DisconnectFailReason> BY_VALUE = new Int2ObjectOpenHashMap<>();

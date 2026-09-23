@@ -251,6 +251,7 @@ public class EntityPackets {
             final boolean teleported = wrapper.read(Types.BOOLEAN); // If the position shouldn't be interpolated
             final boolean forceMoveLocalEntity = wrapper.read(Types.BOOLEAN);
             wrapper.read(Types.BOOLEAN); // force completion
+            wrapper.read(BedrockTypes.UNSIGNED_VAR_LONG); // ticks
 
             final Entity entity = entityTracker.getEntityByRid(entityRuntimeId);
             if (entity == null) {

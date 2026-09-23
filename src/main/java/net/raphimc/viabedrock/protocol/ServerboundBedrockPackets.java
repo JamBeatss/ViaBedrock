@@ -101,7 +101,8 @@ public enum ServerboundBedrockPackets implements ServerboundPacketType {
     CLIENT_CAMERA_AIM_ASSIST(MinecraftPacketIds.ClientCameraAimAssist.getValue()),
     MOVEMENT_PREDICTION_SYNC(MinecraftPacketIds.ClientMovementPredictionSyncPacket.getValue()),
     UPDATE_CLIENT_OPTIONS(MinecraftPacketIds.UpdateClientOptions.getValue()),
-    PLAYER_LOCATION(MinecraftPacketIds.PlayerLocation.getValue());
+    PLAYER_LOCATION(MinecraftPacketIds.PlayerLocation.getValue()),
+    SET_PLAYER_FURNACE_OPTIONS(MinecraftPacketIds.SetPlayerFurnaceOptions.getValue());
     //PACK_SETTING_CHANGE(MinecraftPacketIds.ServerboundPackSettingChange.getValue()),
     //DATA_STORE(MinecraftPacketIds.ServerboundDataStore.getValue()),
     //RESOURCE_PACKS_READY_FOR_VALIDATION(MinecraftPacketIds.ResourcePacksReadyForValidation.getValue()),

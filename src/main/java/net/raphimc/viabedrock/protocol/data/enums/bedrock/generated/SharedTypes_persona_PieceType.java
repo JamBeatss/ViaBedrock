@@ -33,6 +33,8 @@ public enum SharedTypes_persona_PieceType {
     Capes(25),
     ClassicSkin(26),
     Emote(27),
+    Unknown(0),
+    Unsupported(28),
     ;
 
     private static final Int2ObjectMap<SharedTypes_persona_PieceType> BY_VALUE = new Int2ObjectOpenHashMap<>();

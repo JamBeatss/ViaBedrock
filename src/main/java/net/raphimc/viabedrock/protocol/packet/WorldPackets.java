@@ -72,6 +72,17 @@ import java.util.logging.Level;
 
 public class WorldPackets {
 
+    private static void readHeightMap(final PacketWrapper wrapper) {
+        // Since 1.26.50 the 256 byte height map is sent as 16 length-prefixed rows of 16 bytes
+        for (int i = 0; i < 16; i++) {
+            final int rowLength = wrapper.read(BedrockTypes.UNSIGNED_VAR_INT); // row length
+            if (rowLength != 16) {
+                throw new IllegalStateException("Expected height map row length of 16, got " + rowLength);
+            }
+            wrapper.read(new ByteArrayType(16)); // row data
+        }
+    }
+
     private static final PacketHandler UPDATE_BLOCK_HANDLER = wrapper -> {
         final ChunkTracker chunkTracker = wrapper.user().get(ChunkTracker.class);
         final BlockPosition position = wrapper.get(Types.BLOCK_POSITION1_14, 0);
@@ -328,11 +339,11 @@ public class WorldPackets {
                 final byte[] data = wrapper.read(Types.BOOLEAN) ? wrapper.read(BedrockTypes.BYTE_ARRAY) : new byte[0]; // optional data
                 final SubChunkPacketPayload_HeightMapDataType heightmapResult = SubChunkPacketPayload_HeightMapDataType.getByValue(wrapper.read(Types.BYTE), SubChunkPacketPayload_HeightMapDataType.NoData); // heightmap result
                 if (wrapper.read(Types.BOOLEAN)) {
-                    wrapper.read(new ByteArrayType(256)); // optional heightmap data
+                    readHeightMap(wrapper); // optional heightmap data
                 }
                 final SubChunkPacketPayload_HeightMapDataType renderHeightmapResult = SubChunkPacketPayload_HeightMapDataType.getByValue(wrapper.read(Types.BYTE), SubChunkPacketPayload_HeightMapDataType.NoData); // render heightmap result
                 if (wrapper.read(Types.BOOLEAN)) {
-                    wrapper.read(new ByteArrayType(256)); // optional render heightmap data
+                    readHeightMap(wrapper); // optional render heightmap data
                 }
 
                 final BlockPosition absolute = new BlockPosition(center.x() + offset.x(), center.y() + offset.y(), center.z() + offset.z());

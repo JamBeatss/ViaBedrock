@@ -28,6 +28,7 @@ import net.raphimc.viabedrock.experimental.model.inventory.LegacySetItemSlotData
 import net.raphimc.viabedrock.experimental.types.ExperimentalBedrockTypes;
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.ComplexInventoryTransaction_Type;
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.ItemUseInventoryTransaction_TriggerType;
+import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.HandSlot;
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.*;
 import net.raphimc.viabedrock.protocol.rewriter.ItemRewriter;
 import net.raphimc.viabedrock.protocol.types.BedrockTypes;
@@ -45,6 +46,12 @@ public class InventoryTransactionPacketType extends Type<BedrockInventoryTransac
         this.inventoryActionDataType = inventoryActionDataType;
     }
 
+    private static int readHotbarSlotAndSkipHand(final ByteBuf buffer) {
+        final int hotbarSlot = BedrockTypes.VAR_INT.read(buffer); // hotbar slot
+        buffer.readByte(); // hand
+        return hotbarSlot;
+    }
+
     @Override
     public BedrockInventoryTransaction read(ByteBuf buffer) {
         ItemRewriter itemRewriter = user.get(ItemRewriter.class);
@@ -60,10 +67,6 @@ public class InventoryTransactionPacketType extends Type<BedrockInventoryTransac
             }
         }
 
-        if (!buffer.readBoolean()) {
-            throw new IllegalStateException("Expected InventoryTransactionType");
-        }
-
         ComplexInventoryTransaction_Type type = ComplexInventoryTransaction_Type.getByValue(BedrockTypes.UNSIGNED_VAR_INT.read(buffer));
         InventoryActionData[] actions = inventoryActionDataType.read(buffer);
         InventoryTransactionData transactionData = switch (type) {
@@ -74,7 +77,7 @@ public class InventoryTransactionPacketType extends Type<BedrockInventoryTransac
                     ItemUseInventoryTransaction_TriggerType.getByValue(buffer.readByte()),
                     BedrockTypes.BLOCK_POSITION.read(buffer),
                     buffer.readByte(),
-                    BedrockTypes.VAR_INT.read(buffer),
+                    readHotbarSlotAndSkipHand(buffer),
                     itemRewriter.newItemType().read(buffer),
                     BedrockTypes.POSITION_3F.read(buffer),
                     BedrockTypes.POSITION_3F.read(buffer),
@@ -114,9 +117,7 @@ public class InventoryTransactionPacketType extends Type<BedrockInventoryTransac
             ExperimentalBedrockTypes.LEGACY_SET_ITEM_SLOT_DATA.write(buffer, bedrockInventoryTransaction.legacySlots().toArray(new LegacySetItemSlotData[0]));
         }
 
-        Types.BOOLEAN.write(buffer, true);
         BedrockTypes.UNSIGNED_VAR_INT.write(buffer, bedrockInventoryTransaction.transactionType().getValue());
-        Types.BOOLEAN.write(buffer, true);
         if (bedrockInventoryTransaction.actions() != null) { //TODO: Make actions list Optional
             inventoryActionDataType.write(buffer, bedrockInventoryTransaction.actions().toArray(new InventoryActionData[0]));
         } else {
@@ -133,6 +134,7 @@ public class InventoryTransactionPacketType extends Type<BedrockInventoryTransac
                 BedrockTypes.BLOCK_POSITION.write(buffer, data.blockPosition());
                 buffer.writeByte(data.face());
                 BedrockTypes.VAR_INT.write(buffer, data.hotbarSlot());
+                buffer.writeByte(HandSlot.MainHand.getValue()); // hand
                 itemRewriter.newItemType().write(buffer, data.itemInHand());
                 BedrockTypes.POSITION_3F.write(buffer, data.playerPosition());
                 BedrockTypes.POSITION_3F.write(buffer, data.clickPosition());

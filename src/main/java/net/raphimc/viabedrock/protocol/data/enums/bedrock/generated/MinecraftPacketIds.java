@@ -241,6 +241,8 @@ public enum MinecraftPacketIds {
     ClientboundUpdateSoundDataPacket(348),
     SendPartyDestinationCookie(349),
     PartyDestinationCookieResponse(350),
+    SetPlayerFurnaceOptions(351),
+    RecordStarted(352),
     ;
 
     private static final Int2ObjectMap<MinecraftPacketIds> BY_VALUE = new Int2ObjectOpenHashMap<>();

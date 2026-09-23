@@ -86,3 +86,10 @@ dependencies {
     toolImplementation "org.ow2.asm:asm-tree:9.10.1"
     toolImplementation "net.lenni0451.commons:asm:1.9.2"
 }
+
+tasks.register("genBedrockEnums", JavaExec) {
+    classpath = sourceSets.tool.runtimeClasspath
+    mainClass = "net.raphimc.viabedrock.tool.generator.BedrockDataEnumGenerator"
+    systemProperty "protocolDocsEnums", project.findProperty("protocolDocsEnums") ?: ""
+    workingDir = projectDir
+}

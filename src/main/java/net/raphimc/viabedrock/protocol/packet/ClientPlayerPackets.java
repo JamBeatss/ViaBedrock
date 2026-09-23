@@ -379,9 +379,7 @@ public class ClientPlayerPackets {
 
             wrapper.write(BedrockTypes.VAR_INT, 0); // legacy request id
             wrapper.write(Types.BOOLEAN, false); // has legacy data
-            wrapper.write(Types.BOOLEAN, true); // has transaction type
             wrapper.write(BedrockTypes.UNSIGNED_VAR_INT, ComplexInventoryTransaction_Type.ItemUseOnEntityTransaction.getValue()); // transaction type
-            wrapper.write(Types.BOOLEAN, true); // has transaction data
             wrapper.write(BedrockTypes.UNSIGNED_VAR_INT, 0); // actions count
             wrapper.write(BedrockTypes.UNSIGNED_VAR_LONG, entity.runtimeId()); // entity runtime id
             wrapper.write(BedrockTypes.VAR_INT, ItemUseOnActorInventoryTransaction_ActionType.Attack.getValue()); // action type
@@ -412,9 +410,7 @@ public class ClientPlayerPackets {
 
             wrapper.write(BedrockTypes.VAR_INT, 0); // legacy request id
             wrapper.write(Types.BOOLEAN, false); // has legacy data
-            wrapper.write(Types.BOOLEAN, true); // has transaction type
             wrapper.write(BedrockTypes.UNSIGNED_VAR_INT, ComplexInventoryTransaction_Type.ItemUseOnEntityTransaction.getValue()); // transaction type
-            wrapper.write(Types.BOOLEAN, true); // has transaction data
             wrapper.write(BedrockTypes.UNSIGNED_VAR_INT, 0); // actions count
             wrapper.write(BedrockTypes.UNSIGNED_VAR_LONG, entity.runtimeId()); // entity runtime id
             wrapper.write(BedrockTypes.VAR_INT, ItemUseOnActorInventoryTransaction_ActionType.Interact.getValue()); // action type
@@ -553,7 +549,6 @@ public class ClientPlayerPackets {
             wrapper.write(BedrockTypes.POSITION_3F, clientPlayer.position()); // position
             wrapper.write(BedrockTypes.POSITION_2F, MathUtil.calculateMovementDirections(clientPlayer.authInputData(), clientPlayer.isSneaking())); // move vector
             wrapper.write(BedrockTypes.FLOAT_LE, clientPlayer.rotation().z()); // head yaw
-            wrapper.write(Types.BOOLEAN, true); // input flags present
             wrapper.write(BedrockTypes.UNSIGNED_VAR_INT, clientPlayer.authInputData().size()); // input flags count
             for (PlayerAuthInputPacketPayload_InputData inputData : PlayerAuthInputPacketPayload_InputData.values()) {
                 if (clientPlayer.authInputData().contains(inputData)) {
@@ -567,11 +562,8 @@ public class ClientPlayerPackets {
             wrapper.write(BedrockTypes.FLOAT_LE, clientPlayer.rotation().y()); // interact yaw
             wrapper.write(BedrockTypes.UNSIGNED_VAR_LONG, (long) clientPlayer.age()); // tick
             wrapper.write(BedrockTypes.POSITION_3F, velocity); // delta
-            wrapper.write(Types.BOOLEAN, true); // item interaction optional reflected
             wrapper.write(Types.BOOLEAN, false); // no item interaction
-            wrapper.write(Types.BOOLEAN, true); // item stack request optional reflected
             wrapper.write(Types.BOOLEAN, false); // no item stack request
-            wrapper.write(Types.BOOLEAN, true); // block actions optional reflected
             final boolean hasBlockActions = clientPlayer.authInputData().contains(PlayerAuthInputPacketPayload_InputData.PerformBlockActions);
             wrapper.write(Types.BOOLEAN, hasBlockActions);
             if (hasBlockActions) {
@@ -582,9 +574,7 @@ public class ClientPlayerPackets {
                     wrapper.write(BedrockTypes.VAR_INT, blockAction.direction()); // facing
                 }
             }
-            wrapper.write(Types.BOOLEAN, true); // vehicle rotation optional reflected
             wrapper.write(Types.BOOLEAN, false); // not in predicted vehicle
-            wrapper.write(Types.BOOLEAN, true); // predicted vehicle id optional reflected
             wrapper.write(Types.BOOLEAN, false); // not in predicted vehicle
             wrapper.write(BedrockTypes.POSITION_2F, new Position2f(0F, 0F)); // analog move vector
             wrapper.write(BedrockTypes.POSITION_3F, MathUtil.calculateCameraOrientation(clientPlayer.rotation().y(), clientPlayer.rotation().x())); // camera orientation

@@ -4,34 +4,36 @@ package net.raphimc.viabedrock.protocol.data.enums.bedrock.generated;
 import com.viaversion.viaversion.libs.fastutil.ints.Int2ObjectMap;
 import com.viaversion.viaversion.libs.fastutil.ints.Int2ObjectOpenHashMap;
 
-public enum persona_AnimatedTextureType {
+public enum FurnaceLeftTabIndex {
 
-    Face(1),
-    Body32x32(2),
-    Body128x128(3),
     None(0),
+    RecipeFood(1),
+    RecipeItems(2),
+    RecipeBlocks(3),
+    RecipeSearch(4),
+    Inventory(5),
     ;
 
-    private static final Int2ObjectMap<persona_AnimatedTextureType> BY_VALUE = new Int2ObjectOpenHashMap<>();
+    private static final Int2ObjectMap<FurnaceLeftTabIndex> BY_VALUE = new Int2ObjectOpenHashMap<>();
 
     static {
-        for (persona_AnimatedTextureType value : values()) {
+        for (FurnaceLeftTabIndex value : values()) {
             if (!BY_VALUE.containsKey(value.value)) {
                 BY_VALUE.put(value.value, value);
             }
         }
     }
 
-    public static persona_AnimatedTextureType getByValue(final int value) {
+    public static FurnaceLeftTabIndex getByValue(final int value) {
         return BY_VALUE.get(value);
     }
 
-    public static persona_AnimatedTextureType getByValue(final int value, final persona_AnimatedTextureType fallback) {
+    public static FurnaceLeftTabIndex getByValue(final int value, final FurnaceLeftTabIndex fallback) {
         return BY_VALUE.getOrDefault(value, fallback);
     }
 
-    public static persona_AnimatedTextureType getByName(final String name) {
-        for (persona_AnimatedTextureType value : values()) {
+    public static FurnaceLeftTabIndex getByName(final String name) {
+        for (FurnaceLeftTabIndex value : values()) {
             if (value.name().equalsIgnoreCase(name)) {
                 return value;
             }
@@ -39,8 +41,8 @@ public enum persona_AnimatedTextureType {
         return null;
     }
 
-    public static persona_AnimatedTextureType getByName(final String name, final persona_AnimatedTextureType fallback) {
-        for (persona_AnimatedTextureType value : values()) {
+    public static FurnaceLeftTabIndex getByName(final String name, final FurnaceLeftTabIndex fallback) {
+        for (FurnaceLeftTabIndex value : values()) {
             if (value.name().equalsIgnoreCase(name)) {
                 return value;
             }
@@ -50,11 +52,11 @@ public enum persona_AnimatedTextureType {
 
     private final int value;
 
-    persona_AnimatedTextureType(final persona_AnimatedTextureType value) {
+    FurnaceLeftTabIndex(final FurnaceLeftTabIndex value) {
         this(value.value);
     }
 
-    persona_AnimatedTextureType(final int value) {
+    FurnaceLeftTabIndex(final int value) {
         this.value = value;
     }
 

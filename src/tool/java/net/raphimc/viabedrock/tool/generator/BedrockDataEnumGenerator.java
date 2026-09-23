@@ -33,7 +33,7 @@ public class BedrockDataEnumGenerator {
 
     public static void main(String[] args) throws Throwable {
         // Clone https://github.com/EndstoneMC/protocol-docs/
-        final File jsonDir =  new File("/home/exterminate/Projects/Minecraft/protocol-docs/enums/");
+        final File jsonDir =  new File(System.getProperty("protocolDocsEnums", "/home/exterminate/Projects/Minecraft/protocol-docs/enums/"));
         final Gson gson = new Gson();
 
         final CodeGen codeGen = new CodeGen(new File("src/main/java"), "net.raphimc.viabedrock.protocol.data.enums.bedrock.generated");

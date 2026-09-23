@@ -370,7 +370,6 @@ public class HudPackets {
         protocol.registerClientbound(ClientboundBedrockPackets.BOSS_EVENT, ClientboundPackets26_1.BOSS_EVENT, wrapper -> {
             final EntityTracker entityTracker = wrapper.user().get(EntityTracker.class);
             final long bossEntityUniqueId = wrapper.read(BedrockTypes.VAR_LONG); // boss entity unique id
-            final long playerId  = wrapper.read(BedrockTypes.VAR_LONG);
             final int rawUpdateType = wrapper.read(BedrockTypes.UNSIGNED_VAR_INT); // update type
             final BossEventUpdateType updateType = BossEventUpdateType.getByValue(rawUpdateType);
             if (updateType == null) {
