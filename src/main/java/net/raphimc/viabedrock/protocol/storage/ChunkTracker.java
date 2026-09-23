@@ -877,10 +877,28 @@ public class ChunkTracker extends StoredObject {
                     }
                 });
 
+                boolean hasDoor = false;
+                for (int i = 0; i < remappedBlockPalette.size() && !hasDoor; i++) {
+                    hasDoor = this.isJavaDoor(remappedBlockPalette.idByIndex(i));
+                }
+                if (hasDoor) {
+                    for (int y = 0; y < 16; y++) {
+                        for (int z = 0; z < 16; z++) {
+                            for (int x = 0; x < 16; x++) {
+                                final int javaState = remappedBlockPalette.idAt(x, y, z);
+                                if (this.isJavaDoor(javaState)) {
+                                    final BlockPosition doorPosition = new BlockPosition((chunk.getX() << 4) + x, this.minY + (idx << 4) + y, (chunk.getZ() << 4) + z);
+                                    remappedBlockPalette.setIdAt(x, y, z, this.fixDoorHalf(doorPosition, javaState));
+                                }
+                            }
+                        }
+                    }
+                }
                 for (int y = 0; y < 16; y++) {
                     for (int z = 0; z < 16; z++) {
                         for (int x = 0; x < 16; x++) {
-                            final String tag = paletteIndexBlockStateTags[remappedBlockPalette.paletteIndexAt(remappedBlockPalette.index(x, y, z))];
+                            final int paletteIndex = remappedBlockPalette.paletteIndexAt(remappedBlockPalette.index(x, y, z));
+                            final String tag = paletteIndex < paletteIndexBlockStateTags.length ? paletteIndexBlockStateTags[paletteIndex] : null; // Door fix-ups may append entries (doors have no tag)
                             if (tag != null) {
                                 if (BlockEntityRewriter.isBlockEntity(tag)) {
                                     final int absY = this.minY + (idx << 4) + y;
@@ -1147,6 +1165,39 @@ public class ChunkTracker extends StoredObject {
             this.size++;
         }
 
+    }
+
+
+    /**
+     * Bedrock keeps a door's facing and open state on the lower half and the hinge on the upper half, Java needs all of them on both halves.
+     */
+    public int fixDoorHalf(final BlockPosition position, final int javaBlockState) {
+        final net.raphimc.viabedrock.api.model.BlockState state = BedrockProtocol.MAPPINGS.getJavaBlockStates().inverse().get(javaBlockState);
+        if (state == null || !state.identifier().endsWith("_door") || !state.properties().containsKey("half")) {
+            return javaBlockState;
+        }
+        final boolean upper = "upper".equals(state.properties().get("half"));
+        final BlockPosition otherPosition = new BlockPosition(position.x(), position.y() + (upper ? -1 : 1), position.z());
+        final net.raphimc.viabedrock.api.model.BlockState other = BedrockProtocol.MAPPINGS.getJavaBlockStates().inverse().get(this.getJavaBlockState(otherPosition));
+        if (other == null || !other.identifier().equals(state.identifier())) {
+            return javaBlockState;
+        }
+        final java.util.Map<String, String> replacements = new java.util.HashMap<>();
+        if (upper) {
+            replacements.put("facing", other.properties().get("facing"));
+            replacements.put("open", other.properties().get("open"));
+            replacements.put("powered", other.properties().get("powered"));
+        } else {
+            replacements.put("hinge", other.properties().get("hinge"));
+        }
+        replacements.values().removeIf(java.util.Objects::isNull);
+        final Integer fixed = BedrockProtocol.MAPPINGS.getJavaBlockStates().get(state.replaceProperties(replacements));
+        return fixed != null ? fixed : javaBlockState;
+    }
+
+    public boolean isJavaDoor(final int javaBlockState) {
+        final net.raphimc.viabedrock.api.model.BlockState state = BedrockProtocol.MAPPINGS.getJavaBlockStates().inverse().get(javaBlockState);
+        return state != null && state.identifier().endsWith("_door") && state.properties().containsKey("half");
     }
 
 }
