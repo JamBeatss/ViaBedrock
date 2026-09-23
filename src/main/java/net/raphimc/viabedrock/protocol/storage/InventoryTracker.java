@@ -86,6 +86,11 @@ public class InventoryTracker extends StoredObject {
     private final ArrayDeque<QueuedClick> queuedClicks = new ArrayDeque<>();
     private BedrockItem createdOutputPreview;
 
+    // Crafting
+    private final List<Recipe> recipes = new ArrayList<>();
+    private Recipe matchedRecipe;
+    private final List<Short> dragSlots = new ArrayList<>();
+
     public InventoryTracker(final UserConnection user) {
         super(user);
     }
@@ -145,6 +150,24 @@ public class InventoryTracker extends StoredObject {
         return preview;
     }
 
+    // ---- Crafting ----
+
+    public List<Recipe> recipes() {
+        return this.recipes;
+    }
+
+    public Recipe matchedRecipe() {
+        return this.matchedRecipe;
+    }
+
+    public void setMatchedRecipe(final Recipe recipe) {
+        this.matchedRecipe = recipe;
+    }
+
+    public List<Short> dragSlots() {
+        return this.dragSlots;
+    }
+
     public record PendingItemStackRequest(List<ItemStackRequestAction> actions, List<BedrockItem> sourceSnapshots, long sentAt) {
     }
 
@@ -152,6 +175,12 @@ public class InventoryTracker extends StoredObject {
      * A Java container click that waits for the previous item stack request to be answered.
      */
     public record QueuedClick(int containerId, int revision, short slot, byte button, ContainerInput action) {
+    }
+
+    public record Ingredient(int kind, String value, int aux, int count) { // kind: 0 empty, 1 item id, 2 item tag, 3 unsupported
+    }
+
+    public record Recipe(int netId, String tag, boolean shaped, int width, int height, List<Ingredient> ingredients, BedrockItem result, boolean assumeSymmetry) {
     }
 
     /**

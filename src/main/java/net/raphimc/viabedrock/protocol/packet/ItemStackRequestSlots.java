@@ -21,6 +21,7 @@ import com.viaversion.viaversion.api.connection.UserConnection;
 import net.lenni0451.mcstructs_bedrock.forms.elements.*;
 import net.raphimc.viabedrock.ViaBedrock;
 import net.raphimc.viabedrock.api.model.container.Container;
+import net.raphimc.viabedrock.api.model.container.CraftingTableContainer;
 import net.raphimc.viabedrock.api.model.container.player.InventoryContainer;
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.*;
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.ContainerEnumName;
@@ -31,6 +32,7 @@ import net.raphimc.viabedrock.protocol.model.inventory.ItemStackRequestSlot;
 import net.raphimc.viabedrock.protocol.storage.*;
 
 import static net.raphimc.viabedrock.protocol.packet.ContainerClicks.*;
+import static net.raphimc.viabedrock.protocol.packet.CraftingTranslator.*;
 import static net.raphimc.viabedrock.protocol.packet.ItemStackResponses.*;
 
 /**
@@ -43,6 +45,7 @@ final class ItemStackRequestSlots {
 
     // Slot offsets inside the Bedrock player UI container, as the vanilla client addresses them
     static final int UI_CRAFTING_2X2_FIRST = 28; // 28-31
+    static final int UI_CRAFTING_3X3_FIRST = 32; // 32-40
     static final int UI_CREATED_OUTPUT = 50;
 
     // The vanilla client addresses the offhand as slot 1 (a known client quirk since 1.19.70)
@@ -58,7 +61,7 @@ final class ItemStackRequestSlots {
         return switch (containerName.name()) {
             case InventoryContainer, HotbarContainer, CombinedHotbarAndInventoryContainer -> inventoryTracker.getInventoryContainer();
             case CursorContainer -> inventoryTracker.getHudContainer();
-            case CraftingInputContainer -> inventoryTracker.getHudContainer();
+            case CraftingInputContainer -> inventoryTracker.getCurrentContainer() instanceof CraftingTableContainer table ? table : inventoryTracker.getHudContainer();
             case CreatedOutputContainer -> null;
             case ArmorContainer -> inventoryTracker.getArmorContainer();
             case OffhandContainer -> inventoryTracker.getOffhandContainer();
@@ -96,6 +99,10 @@ final class ItemStackRequestSlots {
         }
         // Open containers are anchored to block entities: Bedrock networked as level entity containers
         final int bedrockSlot = container.bedrockSlot(javaSlot);
+        if (container instanceof CraftingTableContainer) { // The 3x3 grid is addressed through the crafting input UI slots
+            if (bedrockSlot < 0 || bedrockSlot >= 9) return null;
+            return new ItemStackRequestSlot(new FullContainerName(ContainerEnumName.CraftingInputContainer, null), (byte) (UI_CRAFTING_3X3_FIRST + bedrockSlot), netIdOf(container.getItem(bedrockSlot)));
+        }
         if (bedrockSlot < 0 || bedrockSlot >= container.size()) {
             return null;
         }
@@ -125,15 +132,16 @@ final class ItemStackRequestSlots {
         final int index = slot.slot() & 0xFF;
         final Container container = switch (slot.containerName().name()) {
             case InventoryContainer, HotbarContainer, CombinedHotbarAndInventoryContainer -> inventoryTracker.getInventoryContainer();
-            case CursorContainer, CraftingInputContainer -> inventoryTracker.getHudContainer();
+            case CursorContainer -> inventoryTracker.getHudContainer();
             case ArmorContainer -> inventoryTracker.getArmorContainer();
             case OffhandContainer -> inventoryTracker.getOffhandContainer();
+            case CraftingInputContainer -> index >= UI_CRAFTING_3X3_FIRST && inventoryTracker.getCurrentContainer() instanceof CraftingTableContainer table ? table : inventoryTracker.getHudContainer();
             default -> inventoryTracker.getCurrentContainer();
         };
         if (container == null) {
             return null;
         }
-        final int resolvedIndex = slot.containerName().name() == ContainerEnumName.OffhandContainer ? 0 : index;
+        final int resolvedIndex = slot.containerName().name() == ContainerEnumName.OffhandContainer ? 0 : container instanceof CraftingTableContainer ? index - UI_CRAFTING_3X3_FIRST : index;
         if (resolvedIndex < 0 || resolvedIndex >= container.size()) {
             return null;
         }

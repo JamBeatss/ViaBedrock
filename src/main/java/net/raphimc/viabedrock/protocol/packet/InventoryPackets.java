@@ -60,6 +60,7 @@ import net.raphimc.viabedrock.ViaBedrock;
 import net.raphimc.viabedrock.api.chunk.BedrockBlockEntity;
 import net.raphimc.viabedrock.api.model.container.ChestContainer;
 import net.raphimc.viabedrock.api.model.container.Container;
+import net.raphimc.viabedrock.api.model.container.CraftingTableContainer;
 import net.raphimc.viabedrock.api.model.container.SimpleContainer;
 import net.raphimc.viabedrock.api.model.container.player.InventoryContainer;
 import net.raphimc.viabedrock.api.model.entity.Entity;
@@ -92,6 +93,7 @@ import java.util.Map;
 import java.util.logging.Level;
 
 import static net.raphimc.viabedrock.protocol.packet.ContainerClicks.*;
+import static net.raphimc.viabedrock.protocol.packet.CraftingTranslator.*;
 import static net.raphimc.viabedrock.protocol.packet.ItemStackRequestSlots.*;
 import static net.raphimc.viabedrock.protocol.packet.ItemStackResponses.*;
 
@@ -179,6 +181,7 @@ public class InventoryPackets {
             wrapper.write(Types.SHORT, (short) javaId); // property id
             wrapper.write(Types.SHORT, (short) value); // value
         });
+        protocol.registerClientbound(ClientboundBedrockPackets.CRAFTING_DATA, null, CraftingTranslator::handleCraftingData);
         protocol.registerClientbound(ClientboundBedrockPackets.CREATIVE_CONTENT, null, wrapper -> {
             wrapper.cancel();
             final ItemRewriter itemRewriter = wrapper.user().get(ItemRewriter.class);
@@ -246,7 +249,7 @@ public class InventoryPackets {
                     container = new ChestContainer(wrapper.user(), containerId, title, position, size);
                 }
                 case MINECART_CHEST, CHEST_BOAT -> container = new SimpleContainer(wrapper.user(), containerId, type, title, position, 27);
-                case WORKBENCH -> container = new SimpleContainer(wrapper.user(), containerId, type, title, position, 9, 1, blockTags("crafting_table")); // Java slot 0 is the result slot
+                case WORKBENCH -> container = new CraftingTableContainer(wrapper.user(), containerId, new TranslationComponent("container.crafting"), position, blockTags("crafting_table")); // Java slot 0 is the result slot
                 case CRAFTER -> container = new SimpleContainer(wrapper.user(), containerId, type, title, position, 10, blockTags("crafter"));
                 case FURNACE -> container = new SimpleContainer(wrapper.user(), containerId, type, title, position, 3, blockTags("furnace"));
                 case BLAST_FURNACE -> container = new SimpleContainer(wrapper.user(), containerId, type, title, position, 3, blockTags("blast_furnace"));

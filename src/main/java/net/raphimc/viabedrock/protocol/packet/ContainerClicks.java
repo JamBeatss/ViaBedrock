@@ -23,6 +23,7 @@ import com.viaversion.viaversion.api.type.Types;
 import net.lenni0451.mcstructs_bedrock.forms.elements.*;
 import net.raphimc.viabedrock.ViaBedrock;
 import net.raphimc.viabedrock.api.model.container.Container;
+import net.raphimc.viabedrock.api.model.container.CraftingTableContainer;
 import net.raphimc.viabedrock.api.util.PacketFactory;
 import net.raphimc.viabedrock.protocol.BedrockProtocol;
 import net.raphimc.viabedrock.protocol.ServerboundBedrockPackets;
@@ -49,6 +50,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.logging.Level;
 
+import static net.raphimc.viabedrock.protocol.packet.CraftingTranslator.*;
 import static net.raphimc.viabedrock.protocol.packet.ItemStackRequestSlots.*;
 import static net.raphimc.viabedrock.protocol.packet.ItemStackResponses.*;
 
@@ -93,6 +95,13 @@ final class ContainerClicks {
                 container = inventoryTracker.getInventoryContainer();
                 javaSlot = javaSlot - playerRegionStart + 9; // Java player inventory slot numbering (9-35 main, 36-44 hotbar)
             }
+        }
+        final boolean craftingView = viewContainer instanceof CraftingTableContainer || viewContainer.type() == ContainerType.INVENTORY;
+        if (craftingView && javaSlot == 0 && (action == ContainerInput.PICKUP || action == ContainerInput.QUICK_MOVE)) {
+            return buildCraftActions(inventoryTracker, viewContainer, action);
+        }
+        if (action == ContainerInput.QUICK_CRAFT) {
+            return buildDragActions(inventoryTracker, viewContainer, rawJavaSlot, button);
         }
         if (action == ContainerInput.QUICK_MOVE) {
             return buildQuickMoveActions(inventoryTracker, viewContainer, container, javaSlot, containerView);
@@ -526,6 +535,47 @@ final class ContainerClicks {
         } else if (gameSession.isInventoryServerAuthoritative() && actions == null) {
             resyncClick(user, inventoryTracker, container);
         }
+    }
+
+    static List<ItemStackRequestAction> buildDragActions(final InventoryTracker inventoryTracker, final Container viewContainer, final int rawJavaSlot, final byte button) {
+        final int stage = button & 3; // 0 start, 1 add slot, 2 end
+        if (stage == 0) {
+            inventoryTracker.dragSlots().clear();
+            return new ArrayList<>();
+        }
+        if (stage == 1) {
+            if (!inventoryTracker.dragSlots().contains((short) rawJavaSlot)) inventoryTracker.dragSlots().add((short) rawJavaSlot);
+            return new ArrayList<>();
+        }
+        final List<Short> slots = new ArrayList<>(inventoryTracker.dragSlots());
+        inventoryTracker.dragSlots().clear();
+        final BedrockItem held = inventoryTracker.getHudContainer().getItem(0);
+        if (held == null || held.isEmpty() || slots.isEmpty()) return new ArrayList<>();
+        final boolean rightDrag = (button >> 2) == 1;
+        final int perSlot = rightDrag ? 1 : Math.max(1, held.amount() / slots.size());
+        final List<ItemStackRequestAction> actions = new ArrayList<>();
+        int remaining = held.amount();
+        for (short javaSlot : slots) {
+            if (remaining <= 0) break;
+            Container container = viewContainer.type() == ContainerType.INVENTORY ? inventoryTracker.getInventoryContainer() : viewContainer;
+            int slot = javaSlot;
+            if (viewContainer.type() != ContainerType.INVENTORY) {
+                final int playerRegionStart = viewContainer.javaSlot(viewContainer.size() - 1) + 1;
+                if (slot >= playerRegionStart && slot < playerRegionStart + 36) {
+                    container = inventoryTracker.getInventoryContainer();
+                    slot = slot - playerRegionStart + 9;
+                }
+            }
+            final ItemStackRequestSlot target = requestSlotInfo(inventoryTracker, container, slot);
+            if (target == null) continue;
+            final TrackedSlot tracked = resolveRequestSlot(inventoryTracker, target);
+            final BedrockItem existing = tracked != null ? tracked.container().getItem(tracked.slot()) : null;
+            if (existing != null && !existing.isEmpty() && existing.isDifferent(held)) continue;
+            final int amount = Math.min(perSlot, remaining);
+            actions.add(ItemStackRequestAction.place(amount, cursorSlot(inventoryTracker), target));
+            remaining -= amount;
+        }
+        return actions;
     }
 
     /**

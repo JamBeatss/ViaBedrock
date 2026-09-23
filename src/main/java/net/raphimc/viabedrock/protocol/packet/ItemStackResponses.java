@@ -23,6 +23,7 @@ import com.viaversion.viaversion.protocols.v26_2to26_3.packet.ClientboundPackets
 import net.lenni0451.mcstructs_bedrock.forms.elements.*;
 import net.raphimc.viabedrock.ViaBedrock;
 import net.raphimc.viabedrock.api.model.container.Container;
+import net.raphimc.viabedrock.api.model.container.CraftingTableContainer;
 import net.raphimc.viabedrock.api.util.PacketFactory;
 import net.raphimc.viabedrock.protocol.BedrockProtocol;
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.*;
@@ -40,6 +41,7 @@ import java.util.List;
 import java.util.logging.Level;
 
 import static net.raphimc.viabedrock.protocol.packet.ContainerClicks.*;
+import static net.raphimc.viabedrock.protocol.packet.CraftingTranslator.*;
 import static net.raphimc.viabedrock.protocol.packet.ItemStackRequestSlots.*;
 
 /**
@@ -78,7 +80,7 @@ final class ItemStackResponses {
                         continue;
                     }
                     for (ItemStackResponse.Slot responseSlot : responseContainer.slots()) {
-                        final int slotIndex = container == inventoryTracker.getOffhandContainer() ? 0 : responseSlot.slot() & 0xFF; // The second slot field is the authoritative slot index (offhand is addressed as slot 1, the crafting grid as 32-40)
+                        final int slotIndex = container == inventoryTracker.getOffhandContainer() ? 0 : container instanceof CraftingTableContainer ? (responseSlot.slot() & 0xFF) - UI_CRAFTING_3X3_FIRST : responseSlot.slot() & 0xFF; // The second slot field is the authoritative slot index (offhand is addressed as slot 1, the crafting grid as 32-40)
                         if (slotIndex < 0 || slotIndex >= container.size()) {
                             continue;
                         }
@@ -116,6 +118,7 @@ final class ItemStackResponses {
             final PacketWrapper acceptedCursorPacket = PacketWrapper.create(ClientboundPackets26_3.SET_CURSOR_ITEM, wrapper.user());
             acceptedCursorPacket.write(VersionedTypes.V26_3.item, inventoryTracker.getHudContainer().getJavaItem(0)); // cursor item
             acceptedCursorPacket.send(BedrockProtocol.class);
+            updateCraftingResult(wrapper.user(), inventoryTracker);
             drainQueuedClicks(wrapper.user(), inventoryTracker);
             return;
         }
@@ -132,6 +135,7 @@ final class ItemStackResponses {
         cursorPacket.send(BedrockProtocol.class);
         inventoryTracker.queuedClicks().clear(); // Queued clicks were built on the rejected state
         inventoryTracker.takeCreatedOutputPreview();
+        updateCraftingResult(wrapper.user(), inventoryTracker);
     }
 
     static List<BedrockItem> snapshotSources(final InventoryTracker inventoryTracker, final List<ItemStackRequestAction> actions) {
@@ -140,7 +144,7 @@ final class ItemStackResponses {
             final ItemStackRequestSlot source = action instanceof ItemStackRequestAction.SourceAction sourceAction ? sourceAction.source() : null;
             if (source != null && source.containerName() != null && source.containerName().name() == ContainerEnumName.CreatedOutputContainer) {
                 final BedrockItem createdOutput = inventoryTracker.takeCreatedOutputPreview();
-                snapshots.add(createdOutput != null ? createdOutput.copy() : null);
+                snapshots.add(createdOutput != null ? createdOutput.copy() : inventoryTracker.matchedRecipe() != null ? inventoryTracker.matchedRecipe().result().copy() : null);
                 continue;
             }
             final TrackedSlot from = resolveRequestSlot(inventoryTracker, source);
