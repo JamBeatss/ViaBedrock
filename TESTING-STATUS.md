@@ -11,7 +11,7 @@ Tested by hand on a live Bedrock 1.26.51 Realm (Java 26.3 client through ViaProx
 the proxy starts, but it has not been tried in game yet. Expect bugs in recipe reading, grid
 matching and the craft request.
 
-Also untested: sleeping pose, drag placement (QUICK_CRAFT), the join hurt-event suppression.
+Also untested: sleeping pose, drag placement (QUICK_CRAFT), the join hurt-event suppression, boat movement (MOVE_VEHICLE), per-item stack sizes.
 
 Known unresolved: sessions drop after 1-3 minutes at the WebRTC layer ("juice: Lost connectivity")
 inside the NetherNet transport library, not in ViaBedrock code.
