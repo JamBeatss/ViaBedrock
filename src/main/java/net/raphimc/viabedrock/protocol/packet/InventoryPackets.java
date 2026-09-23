@@ -927,7 +927,7 @@ public class InventoryPackets {
                         return List.of(ItemStackRequestAction.place(cursorItem.amount(), cursor, source));
                     } else if (!cursorItem.isEmpty() && !cursorItem.isDifferent(clicked)) {
                         // Placing onto the same item type: cap at the max stack size, the server syncs any remainder
-                        final int movable = Math.min(cursorItem.amount(), Math.max(0, MAX_STACK_SIZE - clicked.amount()));
+                        final int movable = Math.min(cursorItem.amount(), Math.max(0, maxStackOf(inventoryTracker, clicked) - clicked.amount()));
                         if (movable <= 0) {
                             return new ArrayList<>();
                         }
@@ -941,7 +941,7 @@ public class InventoryPackets {
                     } else if (!cursorItem.isEmpty() && clicked.isEmpty()) {
                         return List.of(ItemStackRequestAction.place(1, cursor, source));
                     } else if (!cursorItem.isEmpty() && !cursorItem.isDifferent(clicked)) {
-                        final int movable = Math.min(1, Math.max(0, MAX_STACK_SIZE - clicked.amount()));
+                        final int movable = Math.min(1, Math.max(0, maxStackOf(inventoryTracker, clicked) - clicked.amount()));
                         if (movable <= 0) {
                             return new ArrayList<>();
                         }
@@ -1094,7 +1094,7 @@ public class InventoryPackets {
                         inventoryTracker.getHudContainer().setItem(0, BedrockItem.empty());
                     } else if (!cursorItem.isEmpty() && !cursorItem.isDifferent(clicked)) {
                         // Placing onto the same item type: cap at the max stack size
-                        final int movable = Math.min(cursorItem.amount(), Math.max(0, MAX_STACK_SIZE - clicked.amount()));
+                        final int movable = Math.min(cursorItem.amount(), Math.max(0, maxStackOf(inventoryTracker, clicked) - clicked.amount()));
                         if (movable <= 0) {
                             return true;
                         }
@@ -1130,7 +1130,7 @@ public class InventoryPackets {
                         container.setItem(bedSlot, remaining);
                         inventoryTracker.getHudContainer().setItem(0, half);
                     } else if (!cursorItem.isEmpty() && (clicked.isEmpty() || !cursorItem.isDifferent(clicked))) {
-                        if (clicked.amount() >= MAX_STACK_SIZE) {
+                        if (clicked.amount() >= maxStackOf(inventoryTracker, clicked)) {
                             return true; // Can't place more onto a full stack
                         }
                         // Place one item from the cursor
@@ -1438,7 +1438,7 @@ public class InventoryPackets {
         }
 
         int remaining = moving.amount();
-        final int maxStack = MAX_STACK_SIZE;
+        final int maxStack = maxStackOf(inventoryTracker, moving);
         for (int i = 0; i < candidates.size() && remaining > 0; i++) { // Merge into matching stacks first
             final BedrockItem existing = candidateItems.get(i);
             if (existing != null && !existing.isEmpty() && !existing.isDifferent(moving) && existing.amount() < maxStack) {
@@ -1469,7 +1469,7 @@ public class InventoryPackets {
         int target = -1;
         for (int i = 0; i < 36 && target == -1; i++) {
             final BedrockItem existing = inventory.getItem(i);
-            if (existing != null && !existing.isEmpty() && !existing.isDifferent(held) && existing.amount() + held.amount() <= MAX_STACK_SIZE) target = i;
+            if (existing != null && !existing.isEmpty() && !existing.isDifferent(held) && existing.amount() + held.amount() <= maxStackOf(inventoryTracker, held)) target = i;
         }
         for (int i = 0; i < 36 && target == -1; i++) {
             final BedrockItem existing = inventory.getItem(i);
@@ -1712,7 +1712,7 @@ public class InventoryPackets {
             }
             if (destination == null) return new ArrayList<>();
         } else {
-            if (held != null && !held.isEmpty() && (held.isDifferent(result) || held.amount() + result.amount() > MAX_STACK_SIZE)) {
+            if (held != null && !held.isEmpty() && (held.isDifferent(result) || held.amount() + result.amount() > maxStackOf(inventoryTracker, result))) {
                 return new ArrayList<>(); // Can't pick the result up onto a different or full cursor stack
             }
             destination = cursorSlot(inventoryTracker);
@@ -1772,6 +1772,34 @@ public class InventoryPackets {
             remaining -= amount;
         }
         return actions;
+    }
+
+
+    /**
+     * Vanilla max stack size by item identifier (Bedrock doesn't send it for vanilla items). Everything not listed stacks to 64.
+     */
+    private static int maxStackOf(final InventoryTracker inventoryTracker, final BedrockItem item) {
+        if (item == null || item.isEmpty()) return MAX_STACK_SIZE;
+        final String id = inventoryTracker.user().get(ItemRewriter.class).getItems().inverse().get(item.identifier());
+        if (id == null) return MAX_STACK_SIZE;
+        final String name = id.startsWith("minecraft:") ? id.substring(10) : id;
+        if (name.equals("ender_pearl") || name.equals("snowball") || name.equals("egg") || name.equals("blue_egg") || name.equals("brown_egg")
+                || name.equals("bucket") || name.equals("honey_bottle") || name.equals("armor_stand") || name.endsWith("_sign") || name.equals("sign")
+                || name.endsWith("_banner") || name.equals("banner") || name.equals("wind_charge")) {
+            return 16;
+        }
+        if (name.endsWith("_sword") || name.endsWith("_pickaxe") || name.endsWith("_axe") || name.endsWith("_shovel") || name.endsWith("_hoe")
+                || name.endsWith("_helmet") || name.endsWith("_chestplate") || name.endsWith("_leggings") || name.endsWith("_boots")
+                || name.endsWith("_bucket") || name.endsWith("_stew") || name.endsWith("_soup") || name.contains("potion") || name.endsWith("_boat") || name.endsWith("_raft")
+                || name.endsWith("minecart") || name.endsWith("_bed") || name.equals("bed") || name.endsWith("shulker_box") || name.startsWith("music_disc")
+                || name.equals("bow") || name.equals("crossbow") || name.equals("trident") || name.equals("shield") || name.equals("elytra") || name.equals("mace")
+                || name.equals("fishing_rod") || name.equals("carrot_on_a_stick") || name.equals("warped_fungus_on_a_stick") || name.equals("flint_and_steel")
+                || name.equals("shears") || name.equals("saddle") || name.equals("totem_of_undying") || name.equals("enchanted_book") || name.equals("writable_book")
+                || name.equals("written_book") || name.equals("cake") || name.equals("spyglass") || name.equals("brush") || name.equals("bundle") || name.endsWith("_bundle")
+                || name.equals("goat_horn") || name.equals("filled_map") || name.equals("turtle_helmet") || name.equals("wolf_armor") || name.endsWith("horse_armor")) {
+            return 1;
+        }
+        return MAX_STACK_SIZE;
     }
 
 }
