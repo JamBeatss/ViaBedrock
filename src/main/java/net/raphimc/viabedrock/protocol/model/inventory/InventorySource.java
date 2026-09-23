@@ -15,9 +15,10 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-package net.raphimc.viabedrock.experimental.model.inventory;
+package net.raphimc.viabedrock.protocol.model.inventory;
 
-import net.raphimc.viabedrock.protocol.model.BedrockItem;
+import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.InventorySourceFlags;
+import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.InventorySourceType;
 
-public record InventoryActionData(InventorySource source, int slot, BedrockItem fromItem, BedrockItem toItem) {
+public record InventorySource(InventorySourceType type, int containerId, InventorySourceFlags flags) {
 }

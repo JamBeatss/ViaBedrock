@@ -15,19 +15,20 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-package net.raphimc.viabedrock.experimental.types.inventory;
+package net.raphimc.viabedrock.protocol.types.inventory;
 
 import com.viaversion.viaversion.api.connection.UserConnection;
 import com.viaversion.viaversion.api.type.Type;
 import com.viaversion.viaversion.api.type.Types;
 import io.netty.buffer.ByteBuf;
-import net.raphimc.viabedrock.experimental.model.inventory.BedrockInventoryTransaction;
-import net.raphimc.viabedrock.experimental.model.inventory.InventoryActionData;
-import net.raphimc.viabedrock.experimental.model.inventory.InventoryTransactionData;
-import net.raphimc.viabedrock.experimental.model.inventory.LegacySetItemSlotData;
-import net.raphimc.viabedrock.experimental.types.ExperimentalBedrockTypes;
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.ComplexInventoryTransaction_Type;
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.*;
+import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.HandSlot;
+import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.ItemUseTriggerType;
+import net.raphimc.viabedrock.protocol.model.inventory.BedrockInventoryTransaction;
+import net.raphimc.viabedrock.protocol.model.inventory.InventoryActionData;
+import net.raphimc.viabedrock.protocol.model.inventory.InventoryTransactionData;
+import net.raphimc.viabedrock.protocol.model.inventory.LegacySetItemSlotData;
 import net.raphimc.viabedrock.protocol.rewriter.ItemRewriter;
 import net.raphimc.viabedrock.protocol.types.BedrockTypes;
 
@@ -44,6 +45,12 @@ public class InventoryTransactionPacketType extends Type<BedrockInventoryTransac
         this.inventoryActionDataType = inventoryActionDataType;
     }
 
+    private static int readHotbarSlotAndSkipHand(final ByteBuf buffer) {
+        final int hotbarSlot = BedrockTypes.VAR_INT.read(buffer); // hotbar slot
+        buffer.readByte(); // hand
+        return hotbarSlot;
+    }
+
     @Override
     public BedrockInventoryTransaction read(ByteBuf buffer) {
         ItemRewriter itemRewriter = user.get(ItemRewriter.class);
@@ -55,7 +62,7 @@ public class InventoryTransactionPacketType extends Type<BedrockInventoryTransac
         LegacySetItemSlotData[] legacySlots = new LegacySetItemSlotData[0];
         if (buffer.readBoolean()) {
             if (legacyRequestId < -1 && (legacyRequestId & 1) == 0) {
-                legacySlots = ExperimentalBedrockTypes.LEGACY_SET_ITEM_SLOT_DATA.read(buffer);
+                legacySlots = BedrockTypes.LEGACY_SET_ITEM_SLOT_DATA.read(buffer);
             }
         }
 
@@ -69,8 +76,7 @@ public class InventoryTransactionPacketType extends Type<BedrockInventoryTransac
                     ItemUseTriggerType.getByValue(buffer.readByte()),
                     BedrockTypes.BLOCK_POSITION.read(buffer),
                     buffer.readByte(),
-                    BedrockTypes.VAR_INT.read(buffer),
-                    HandSlot.getByValue(buffer.readByte()),
+                    readHotbarSlotAndSkipHand(buffer),
                     itemRewriter.newItemType().read(buffer),
                     BedrockTypes.POSITION_3F.read(buffer),
                     BedrockTypes.POSITION_3F.read(buffer),
@@ -105,9 +111,11 @@ public class InventoryTransactionPacketType extends Type<BedrockInventoryTransac
         }
 
         BedrockTypes.VAR_INT.write(buffer, bedrockInventoryTransaction.legacyRequestId());
-        Types.BOOLEAN.write(buffer, bedrockInventoryTransaction.legacyRequestId() != 0);
-        if (bedrockInventoryTransaction.legacyRequestId() != 0) {
-            ExperimentalBedrockTypes.LEGACY_SET_ITEM_SLOT_DATA.write(buffer, bedrockInventoryTransaction.legacySlots().toArray(new LegacySetItemSlotData[0]));
+        if (bedrockInventoryTransaction.legacyRequestId() < -1 && (bedrockInventoryTransaction.legacyRequestId() & 1) == 0) {
+            Types.BOOLEAN.write(buffer, true);
+            BedrockTypes.LEGACY_SET_ITEM_SLOT_DATA.write(buffer, bedrockInventoryTransaction.legacySlots().toArray(new LegacySetItemSlotData[0]));
+        } else {
+            Types.BOOLEAN.write(buffer, false);
         }
 
         BedrockTypes.UNSIGNED_VAR_INT.write(buffer, bedrockInventoryTransaction.transactionType().getValue());
@@ -127,7 +135,7 @@ public class InventoryTransactionPacketType extends Type<BedrockInventoryTransac
                 BedrockTypes.BLOCK_POSITION.write(buffer, data.blockPosition());
                 buffer.writeByte(data.face());
                 BedrockTypes.VAR_INT.write(buffer, data.hotbarSlot());
-                buffer.writeByte(data.handSlot().getValue());
+                buffer.writeByte(HandSlot.Mainhand.getValue()); // hand
                 itemRewriter.newItemType().write(buffer, data.itemInHand());
                 BedrockTypes.POSITION_3F.write(buffer, data.playerPosition());
                 BedrockTypes.POSITION_3F.write(buffer, data.clickPosition());

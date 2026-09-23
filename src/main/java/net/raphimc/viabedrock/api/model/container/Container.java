@@ -115,6 +115,13 @@ public abstract class Container {
         return slot;
     }
 
+    /**
+     * Inverse of {@link #javaSlot(int)}: converts a Java slot number back to the Bedrock slot number.
+     */
+    public int bedrockSlot(final int javaSlot) {
+        return javaSlot;
+    }
+
     public byte javaContainerId() {
         return this.containerId();
     }
@@ -140,7 +147,9 @@ public abstract class Container {
     }
 
     public boolean isValidBlockTag(final String tag) {
-        if (tag == null) {
+        if (this.validBlockTags.isEmpty()) {
+            return true; // No tag data for this container's block, so it can't be validated
+        } else if (tag == null) {
             return false;
         } else {
             return this.validBlockTags.contains(tag);

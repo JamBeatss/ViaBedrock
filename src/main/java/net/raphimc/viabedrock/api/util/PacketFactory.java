@@ -26,19 +26,26 @@ import com.viaversion.viaversion.api.type.Types;
 import com.viaversion.viaversion.api.type.types.version.VersionedTypes;
 import com.viaversion.viaversion.libs.gson.JsonNull;
 import com.viaversion.viaversion.protocols.v26_2to26_3.packet.ClientboundPackets26_3;
+import net.raphimc.viabedrock.ViaBedrock;
 import net.raphimc.viabedrock.api.model.container.Container;
 import net.raphimc.viabedrock.api.model.entity.Entity;
 import net.raphimc.viabedrock.protocol.BedrockProtocol;
 import net.raphimc.viabedrock.protocol.ServerboundBedrockPackets;
 import net.raphimc.viabedrock.protocol.data.BedrockMappingData;
+import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.ActorLinkType;
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.ContainerType;
+import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.InteractPacketPayload_Action;
+import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.PlayerActionType;
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.ServerboundLoadingScreenPacketType;
 import net.raphimc.viabedrock.protocol.data.enums.java.EntityEvent;
 import net.raphimc.viabedrock.protocol.data.enums.java.GameEventType;
 import net.raphimc.viabedrock.protocol.data.enums.java.generated.CustomChatCompletionsAction;
+import net.raphimc.viabedrock.protocol.model.EntityLink;
 import net.raphimc.viabedrock.protocol.model.Position3f;
 import net.raphimc.viabedrock.protocol.storage.InventoryTracker;
 import net.raphimc.viabedrock.protocol.types.BedrockTypes;
+
+import java.util.logging.Level;
 
 public class PacketFactory {
     public static void sendJavaBlockDestroyProgress(final UserConnection user, final int id, final BlockPosition position, final int stage) {
@@ -124,11 +131,36 @@ public class PacketFactory {
     }
 
     public static void sendBedrockContainerClose(final UserConnection user, final byte containerId, final ContainerType containerType) {
+        ViaBedrock.getPlatform().getLogger().log(Level.FINE, "Sending CONTAINER_CLOSE to server: id=" + containerId);
         final PacketWrapper containerClose = PacketWrapper.create(ServerboundBedrockPackets.CONTAINER_CLOSE, user);
         containerClose.write(Types.BYTE, containerId); // container id
         containerClose.write(Types.BYTE, (byte) containerType.getValue()); // type
         containerClose.write(Types.BOOLEAN, false); // server initiated
         containerClose.sendToServer(BedrockProtocol.class);
+    }
+
+    public static void sendBedrockPlayerAction(final UserConnection user, final long entityId, final PlayerActionType actionType, final BlockPosition position, final BlockPosition resultPosition, final int face) {
+        final PacketWrapper playerAction = PacketWrapper.create(ServerboundBedrockPackets.PLAYER_ACTION, user);
+        playerAction.write(BedrockTypes.UNSIGNED_VAR_LONG, entityId); // entity runtime id
+        playerAction.write(BedrockTypes.VAR_INT, actionType.getValue()); // action type
+        playerAction.write(BedrockTypes.BLOCK_POSITION, position); // block position
+        playerAction.write(BedrockTypes.BLOCK_POSITION, resultPosition); // result position
+        playerAction.write(BedrockTypes.VAR_INT, face); // face
+        playerAction.sendToServer(BedrockProtocol.class);
+    }
+
+    public static void sendBedrockDismount(final UserConnection user, final long entityRId, final Position3f position) {
+        final PacketWrapper dismountPacket = PacketWrapper.create(ServerboundBedrockPackets.INTERACT, user);
+        dismountPacket.write(Types.UNSIGNED_BYTE, (short) InteractPacketPayload_Action.StopRiding.getValue()); // action
+        dismountPacket.write(BedrockTypes.UNSIGNED_VAR_LONG, entityRId); // target entity runtime id
+        dismountPacket.write(BedrockTypes.OPTIONAL_POSITION_3F, position); // dismount position
+        dismountPacket.sendToServer(BedrockProtocol.class);
+    }
+
+    public static void sendBedrockMount(final UserConnection user, final Entity vehicle, final Entity passenger) {
+        final PacketWrapper linkPacket = PacketWrapper.create(ServerboundBedrockPackets.SET_ENTITY_LINK, user);
+        linkPacket.write(BedrockTypes.ENTITY_LINK, new EntityLink(vehicle.uniqueId(), passenger.uniqueId(), ActorLinkType.Riding, false, true, 0F)); // passenger initiated link
+        linkPacket.sendToServer(BedrockProtocol.class);
     }
 
     public static void sendBedrockLoadingScreen(final UserConnection user, final ServerboundLoadingScreenPacketType type, final Long loadingScreenId) {

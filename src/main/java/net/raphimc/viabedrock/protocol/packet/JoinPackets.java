@@ -50,8 +50,8 @@ import net.raphimc.viabedrock.protocol.ServerboundBedrockPackets;
 import net.raphimc.viabedrock.protocol.data.DataValues;
 import net.raphimc.viabedrock.protocol.data.ProtocolConstants;
 import net.raphimc.viabedrock.protocol.data.enums.Dimension;
-import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.Difficulty;
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.*;
+import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.Difficulty;
 import net.raphimc.viabedrock.protocol.data.enums.java.GameEventType;
 import net.raphimc.viabedrock.protocol.data.enums.java.Relative;
 import net.raphimc.viabedrock.protocol.data.enums.java.generated.PlayerInfoUpdateAction;
@@ -350,7 +350,7 @@ public class JoinPackets {
                     }
 
                     if (!inventoryServerAuthoritative) {
-                        ViaBedrock.getPlatform().getLogger().log(Level.INFO, "This server uses client authoritative inventories. This is not supported yet.");
+                        ViaBedrock.getPlatform().getLogger().log(Level.FINE, "This server uses client authoritative inventories.");
                     }
 
                     gameSession.setBedrockVanillaVersion(version);
@@ -424,8 +424,8 @@ public class JoinPackets {
                     final int count = wrapper.read(BedrockTypes.UNSIGNED_VAR_INT); // entry count
                     for (int i = 0; i < count; i++) {
                         final String dimensionIdentifier = wrapper.read(BedrockTypes.STRING); // dimension identifier
-                        final int maximumHeight = wrapper.read(BedrockTypes.VAR_INT); // maximum height
                         final int minimumHeight = wrapper.read(BedrockTypes.VAR_INT); // minimum height
+                        final int maximumHeight = minimumHeight + wrapper.read(BedrockTypes.VAR_INT); // height range
                         wrapper.read(BedrockTypes.VAR_INT); // generator type
                         wrapper.read(BedrockTypes.VAR_INT); // dimension type
                         wrapper.read(BedrockTypes.UUID); // pack id

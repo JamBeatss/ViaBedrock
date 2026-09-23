@@ -164,7 +164,7 @@ public class HudPackets {
             final int rawType = wrapper.read(BedrockTypes.VAR_INT); // type
             final SetTitlePacket_TitleType type = SetTitlePacket_TitleType.getByValue(rawType);
             if (type == null) {
-                ViaBedrock.getPlatform().getLogger().log(Level.WARNING, "Unknown SetTitlePacketPayload_TitleType: " + rawType);
+                ViaBedrock.getPlatform().getLogger().log(Level.WARNING, "Unknown SetTitlePacket_TitleType: " + rawType);
                 wrapper.cancel();
                 return;
             }
@@ -210,7 +210,7 @@ public class HudPackets {
                         wrapper.write(Types.INT, stayTicks); // stay ticks
                         wrapper.write(Types.INT, fadeOutTicks); // fade out ticks
                     }
-                    default -> throw new IllegalStateException("Unhandled SetTitlePacketPayload_TitleType: " + type);
+                    default -> throw new IllegalStateException("Unhandled SetTitlePacket_TitleType: " + type);
                 }
             } catch (Throwable e) { // Bedrock client silently ignores errors
                 ViaBedrock.getPlatform().getLogger().log(Level.WARNING, "Error while translating '" + originalText + "'", e);

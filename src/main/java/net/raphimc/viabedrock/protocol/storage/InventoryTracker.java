@@ -19,6 +19,7 @@ package net.raphimc.viabedrock.protocol.storage;
 
 import com.viaversion.viaversion.api.connection.StoredObject;
 import com.viaversion.viaversion.api.connection.UserConnection;
+import com.viaversion.viaversion.api.minecraft.item.Item;
 import com.viaversion.viaversion.api.protocol.packet.PacketWrapper;
 import com.viaversion.viaversion.api.type.Types;
 import com.viaversion.viaversion.libs.fastutil.ints.IntObjectPair;
@@ -37,19 +38,30 @@ import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.ContainerEnu
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.ContainerID;
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.ContainerType;
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.ModalFormCancelReason;
+import net.raphimc.viabedrock.protocol.data.enums.java.generated.ContainerInput;
 import net.raphimc.viabedrock.protocol.data.generated.bedrock.CustomItemTags;
 import net.raphimc.viabedrock.protocol.model.BedrockItem;
 import net.raphimc.viabedrock.protocol.model.FullContainerName;
 import net.raphimc.viabedrock.protocol.model.Position3f;
+import net.raphimc.viabedrock.protocol.model.inventory.ItemStackRequestAction;
 import net.raphimc.viabedrock.protocol.rewriter.BlockStateRewriter;
 import net.raphimc.viabedrock.protocol.rewriter.ItemRewriter;
 import net.raphimc.viabedrock.protocol.types.BedrockTypes;
 
+import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.logging.Level;
 
 public class InventoryTracker extends StoredObject {
+
+    // Clicks stop waiting for a response after this long; the request is kept for a late response
+    private static final long ITEM_STACK_REQUEST_TIMEOUT_MS = 1500;
+    private static final int EXPIRED_ITEM_STACK_REQUEST_HISTORY = 16;
 
     private final InventoryContainer inventoryContainer = new InventoryContainer(this.user());
     private final OffhandContainer offhandContainer = new OffhandContainer(this.user());
@@ -61,8 +73,123 @@ public class InventoryTracker extends StoredObject {
     private Container pendingCloseContainer = null;
     private IntObjectPair<Form> currentForm = null;
 
+    // Item stack request bookkeeping (server-auth inventory)
+    private int nextItemStackRequestId = -1; // client generated net ids are negative and odd: -1, -3, -5, ...
+    private final List<CreativeItem> creativeItems = new ArrayList<>();
+    private final Map<Integer, PendingItemStackRequest> pendingItemStackRequests = new HashMap<>();
+    private final Map<Integer, PendingItemStackRequest> expiredItemStackRequests = new LinkedHashMap<>() {
+        @Override
+        protected boolean removeEldestEntry(final Map.Entry<Integer, PendingItemStackRequest> eldest) {
+            return this.size() > EXPIRED_ITEM_STACK_REQUEST_HISTORY;
+        }
+    };
+    private final ArrayDeque<QueuedClick> queuedClicks = new ArrayDeque<>();
+    private BedrockItem createdOutputPreview;
+
     public InventoryTracker(final UserConnection user) {
         super(user);
+    }
+
+    // ---- Item stack requests ----
+
+    /**
+     * Allocates the next item stack request id. The Bedrock server expects strictly increasing ids.
+     */
+    public int nextItemStackRequestId() {
+        final int id = this.nextItemStackRequestId;
+        this.nextItemStackRequestId -= 2;
+        return id;
+    }
+
+    public int peekNextItemStackRequestId() {
+        return this.nextItemStackRequestId;
+    }
+
+    public void trackItemStackRequest(final int requestId, final List<ItemStackRequestAction> actions, final List<BedrockItem> sourceSnapshots) {
+        this.pendingItemStackRequests.put(requestId, new PendingItemStackRequest(actions, sourceSnapshots, System.currentTimeMillis()));
+    }
+
+    public PendingItemStackRequest takePendingItemStackRequest(final int requestId) {
+        final PendingItemStackRequest pending = this.pendingItemStackRequests.remove(requestId);
+        return pending != null ? pending : this.expiredItemStackRequests.remove(requestId);
+    }
+
+    public boolean hasPendingItemStackRequests() {
+        final long now = System.currentTimeMillis();
+        // Never block clicks on a lost response, but keep the expired request so a late response can still be applied
+        final Iterator<Map.Entry<Integer, PendingItemStackRequest>> iterator = this.pendingItemStackRequests.entrySet().iterator();
+        while (iterator.hasNext()) {
+            final Map.Entry<Integer, PendingItemStackRequest> entry = iterator.next();
+            if (now - entry.getValue().sentAt() > ITEM_STACK_REQUEST_TIMEOUT_MS) {
+                this.expiredItemStackRequests.put(entry.getKey(), entry.getValue());
+                iterator.remove();
+            }
+        }
+        return !this.pendingItemStackRequests.isEmpty();
+    }
+
+    public ArrayDeque<QueuedClick> queuedClicks() {
+        return this.queuedClicks;
+    }
+
+    /**
+     * The item a special screen request will create (anvil output, enchanted item, trade result). Consumed by the next request snapshot.
+     */
+    public void setCreatedOutputPreview(final BedrockItem createdOutputPreview) {
+        this.createdOutputPreview = createdOutputPreview;
+    }
+
+    public BedrockItem takeCreatedOutputPreview() {
+        final BedrockItem preview = this.createdOutputPreview;
+        this.createdOutputPreview = null;
+        return preview;
+    }
+
+    public record PendingItemStackRequest(List<ItemStackRequestAction> actions, List<BedrockItem> sourceSnapshots, long sentAt) {
+    }
+
+    /**
+     * A Java container click that waits for the previous item stack request to be answered.
+     */
+    public record QueuedClick(int containerId, int revision, short slot, byte button, ContainerInput action) {
+    }
+
+    /**
+     * One entry of the Bedrock creative content: the item and its creative net id (used by craft creative requests).
+     */
+    public record CreativeItem(BedrockItem item, int netId) {
+    }
+
+    public void setCreativeItems(final List<CreativeItem> creativeItems) {
+        this.creativeItems.clear();
+        this.creativeItems.addAll(creativeItems);
+    }
+
+    public List<CreativeItem> getCreativeItems() {
+        return this.creativeItems;
+    }
+
+    /**
+     * Finds the creative content index of the given Java item, or -1 if it's not in the creative content.
+     * Matches on item id + data only: the server's creative entries can have different block runtime ids
+     * and NBT nuances than locally synthesized items.
+     */
+    public int findCreativeItemIndex(final ItemRewriter itemRewriter, final Item javaItem) {
+        final BedrockItem bedrockItem = itemRewriter.bedrockItem(javaItem);
+        if (bedrockItem.isEmpty()) {
+            return -1;
+        }
+        for (int i = 0; i < this.creativeItems.size(); i++) {
+            final BedrockItem creativeItem = this.creativeItems.get(i).item();
+            if (creativeItem.identifier() == bedrockItem.identifier() && creativeItem.data() == bedrockItem.data()) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    public int getCreativeItemNetId(final int index) {
+        return index >= 0 && index < this.creativeItems.size() ? this.creativeItems.get(index).netId() : 0;
     }
 
     public Container getContainerClientbound(final byte containerId, final FullContainerName containerName, final BedrockItem storageItem) {
@@ -70,7 +197,7 @@ public class InventoryTracker extends StoredObject {
         if (containerId == this.offhandContainer.containerId()) return this.offhandContainer;
         if (containerId == this.armorContainer.containerId()) return this.armorContainer;
         if (containerId == this.hudContainer.containerId()) return this.hudContainer;
-        if (containerId == ContainerID.CONTAINER_ID_REGISTRY.getValue() && containerName.name() == ContainerEnumName.DynamicContainer) {
+        if (containerId == ContainerID.CONTAINER_ID_REGISTRY.getValue() && containerName != null && containerName.name() == ContainerEnumName.DynamicContainer && storageItem != null) {
             final String itemTag = BedrockProtocol.MAPPINGS.getBedrockCustomItemTags().get(this.user().get(ItemRewriter.class).getItems().inverse().get(storageItem.identifier()));
             if (!storageItem.isEmpty() && CustomItemTags.BUNDLE.equals(itemTag)) {
                 return this.dynamicContainerRegistry.computeIfAbsent(containerName, cn -> new BundleContainer(this.user(), cn));
@@ -107,6 +234,7 @@ public class InventoryTracker extends StoredObject {
             this.currentContainer = null;
         }
         this.pendingCloseContainer = container;
+        this.queuedClicks.clear(); // Queued clicks belong to the closed container
     }
 
     public void setCurrentContainerClosed(final boolean serverInitiated) {
@@ -115,6 +243,7 @@ public class InventoryTracker extends StoredObject {
         }
         this.currentContainer = null;
         this.pendingCloseContainer = null;
+        this.queuedClicks.clear();
     }
 
     public void closeCurrentForm() {
@@ -187,6 +316,8 @@ public class InventoryTracker extends StoredObject {
             throw new IllegalStateException("There is already another container open");
         }
         this.currentContainer = container;
+        this.queuedClicks.clear(); // Never replay a click against a newly opened container that reuses the id
+        this.createdOutputPreview = null;
     }
 
     public Container getPendingCloseContainer() {

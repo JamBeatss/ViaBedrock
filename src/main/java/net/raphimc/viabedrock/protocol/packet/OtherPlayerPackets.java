@@ -113,7 +113,15 @@ public class OtherPlayerPackets {
             setEquipment.send(BedrockProtocol.class);
 
             entity.sendInitialEntityData();
+            if (!entityProperties.isEmpty()) {
+                ViaBedrock.getPlatform().getLogger().log(Level.FINE, "Skipping " + entityProperties.intProperties().size() + " int and " + entityProperties.floatProperties().size() + " float entity properties for player " + username);
+            }
             entity.updateEntityData(entityData);
+
+            // Apply initial entity links (e.g. this player riding on an entity)
+            for (EntityLink entityLink : entityLinks) {
+                EntityPackets.handleEntityLink(wrapper.user(), entityLink);
+            }
         });
         protocol.registerClientbound(ClientboundBedrockPackets.MOVE_PLAYER, ClientboundPackets26_3.ENTITY_POSITION_SYNC, wrapper -> {
             final EntityTracker entityTracker = wrapper.user().get(EntityTracker.class);
