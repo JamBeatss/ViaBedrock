@@ -674,6 +674,26 @@ public class ClientPlayerPackets {
             final ClientPlayerEntity clientPlayer = wrapper.user().get(EntityTracker.class).getClientPlayer();
             clientPlayer.updatePlayerPosition(MathUtil.wrapDegrees(wrapper.read(Types.FLOAT)), wrapper.read(Types.FLOAT), wrapper.read(Types.UNSIGNED_BYTE));
         });
+        protocol.registerServerbound(ServerboundPackets26_1.MOVE_VEHICLE, null, wrapper -> {
+            // While riding (boats), the Java client moves the vehicle and stops sending player positions:
+            // carry the vehicle's position and yaw into the client predicted vehicle PlayerAuthInput
+            wrapper.cancel();
+            final EntityTracker entityTracker = wrapper.user().get(EntityTracker.class);
+            final ClientPlayerEntity clientPlayer = entityTracker.getClientPlayer();
+            final double x = wrapper.read(Types.DOUBLE); // x
+            final double y = wrapper.read(Types.DOUBLE); // y
+            final double z = wrapper.read(Types.DOUBLE); // z
+            final float yaw = wrapper.read(Types.FLOAT); // yaw
+            final float pitch = wrapper.read(Types.FLOAT); // pitch
+            final boolean onGround = wrapper.read(Types.BOOLEAN); // on ground
+            final Entity vehicle = clientPlayer.mountEntityRId() != -1 ? entityTracker.getEntityByRid(clientPlayer.mountEntityRId()) : null;
+            if (vehicle == null) {
+                return;
+            }
+            vehicle.setPosition(new Position3f((float) x, (float) y, (float) z));
+            vehicle.setRotation(new Position3f(pitch, MathUtil.wrapDegrees(yaw), MathUtil.wrapDegrees(yaw)));
+            clientPlayer.updatePlayerPosition(x, y, z, (short) (onGround ? MovePlayerFlag.ON_GROUND.getBit() : 0));
+        });
         protocol.registerServerbound(ServerboundPackets26_1.ACCEPT_TELEPORTATION, null, wrapper -> {
             wrapper.cancel();
             final ClientPlayerEntity clientPlayer = wrapper.user().get(EntityTracker.class).getClientPlayer();
@@ -828,7 +848,7 @@ public class ClientPlayerPackets {
             // Client predicted vehicle: while riding, position/velocity are interpreted as the vehicle's
             if (vehicle != null) {
                 wrapper.write(Types.BOOLEAN, true); // vehicle rotation present
-                wrapper.write(BedrockTypes.POSITION_2F, new Position2f(0F, clientPlayer.rotation().y())); // vehicle rotation (pitch, yaw)
+                wrapper.write(BedrockTypes.POSITION_2F, new Position2f(0F, vehicle.rotation() != null ? vehicle.rotation().y() : clientPlayer.rotation().y())); // vehicle rotation (pitch, yaw)
             } else {
                 wrapper.write(Types.BOOLEAN, false); // no vehicle rotation
             }
