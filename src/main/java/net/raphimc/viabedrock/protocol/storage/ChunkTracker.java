@@ -492,6 +492,15 @@ public class ChunkTracker extends StoredObject {
             } else if (CustomBlockTags.ITEM_FRAME.equals(tag)) {
                 entityTracker.spawnItemFrame(blockPosition, blockStateRewriter.blockState(blockState));
             }
+        } else if (BlockEntityRewriter.isBlockEntity(tag)) {
+            // Unchanged block (e.g. a chest being opened): keep the block state its block entity derives (double chest side, bed colour)
+            final BedrockBlockEntity bedrockBlockEntity = this.getBlockEntity(blockPosition);
+            if (bedrockBlockEntity != null) {
+                final BlockEntity javaBlockEntity = BlockEntityRewriter.toJava(this.user(), blockState, bedrockBlockEntity);
+                if (javaBlockEntity instanceof BlockEntityWithBlockState blockEntityWithBlockState) {
+                    remappedBlockState = blockEntityWithBlockState.blockState();
+                }
+            }
         }
 
         return new IntObjectImmutablePair<>(remappedBlockState, null);
@@ -1198,6 +1207,39 @@ public class ChunkTracker extends StoredObject {
     public boolean isJavaDoor(final int javaBlockState) {
         final net.raphimc.viabedrock.api.model.BlockState state = BedrockProtocol.MAPPINGS.getJavaBlockStates().inverse().get(javaBlockState);
         return state != null && state.identifier().endsWith("_door") && state.properties().containsKey("half");
+    }
+
+
+    /**
+     * Returns the other half of the bed at the given position, or null if there is no bed there.
+     */
+    public BlockPosition bedPartner(final BlockPosition position) {
+        final BlockStateRewriter blockStateRewriter = this.user().get(BlockStateRewriter.class);
+        final int bedrockState = this.getBlockState(position);
+        if (!CustomBlockTags.BED.equals(blockStateRewriter.tag(bedrockState))) {
+            return null;
+        }
+        final net.raphimc.viabedrock.api.model.BlockState state = blockStateRewriter.blockState(bedrockState);
+        if (state == null) return null;
+        final String direction = state.properties().get("direction");
+        final String headPiece = state.properties().get("head_piece_bit");
+        if (direction == null || headPiece == null) return null;
+        int dx = 0, dz = 0;
+        switch (direction) {
+            case "0" -> dz = 1;  // south
+            case "1" -> dx = -1; // west
+            case "2" -> dz = -1; // north
+            case "3" -> dx = 1;  // east
+            default -> {
+                return null;
+            }
+        }
+        if (headPiece.equals("1") || headPiece.equals("true")) {
+            dx = -dx;
+            dz = -dz;
+        }
+        final BlockPosition partner = new BlockPosition(position.x() + dx, position.y(), position.z() + dz);
+        return CustomBlockTags.BED.equals(blockStateRewriter.tag(this.getBlockState(partner))) ? partner : null;
     }
 
 }

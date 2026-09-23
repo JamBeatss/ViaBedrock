@@ -360,8 +360,13 @@ public class ClientPlayerPackets {
                         clientPlayer.addAuthInputBlockAction(new ClientPlayerEntity.AuthInputBlockAction(PlayerActionType.AbortDestroyBlock, position, direction.ordinal()));
                     }
 
+                    final BlockPosition bedPartner = chunkTracker.bedPartner(position); // The Bedrock client removes the other bed half itself
                     chunkTracker.handleBlockChange(position, 0, chunkTracker.bedrockAirId());
                     PacketFactory.sendJavaBlockUpdate(wrapper.user(), position, ProtocolConstants.JAVA_AIR_ID);
+                    if (bedPartner != null) {
+                        chunkTracker.handleBlockChange(bedPartner, 0, chunkTracker.bedrockAirId());
+                        PacketFactory.sendJavaBlockUpdate(wrapper.user(), bedPartner, ProtocolConstants.JAVA_AIR_ID);
+                    }
                 }
                 case DROP_ITEM, DROP_ALL_ITEMS -> {
                     // Dropping items is done with a synthetic inventory transaction: a world interaction
@@ -556,6 +561,11 @@ public class ClientPlayerPackets {
             final InteractionHand hand = InteractionHand.values()[wrapper.read(Types.VAR_INT)]; // hand
 
             BlockPosition position = wrapper.read(Types.BLOCK_POSITION1_14); // block position
+            final int clickedJavaState = chunkTracker.getJavaBlockState(position);
+            if (chunkTracker.isJavaDoor(clickedJavaState) && chunkTracker.isJavaDoor(chunkTracker.getJavaBlockState(new BlockPosition(position.x(), position.y() - 1, position.z())))
+                    && net.raphimc.viabedrock.protocol.BedrockProtocol.MAPPINGS.getJavaBlockStates().inverse().get(clickedJavaState).properties().get("half").equals("upper")) {
+                position = new BlockPosition(position.x(), position.y() - 1, position.z()); // Bedrock doors are interacted with through their lower half
+            }
             int faceInt = wrapper.read(Types.UNSIGNED_BYTE); // face
             Direction direction = Direction.getFromVerticalId(faceInt);
             if (direction == null) {
