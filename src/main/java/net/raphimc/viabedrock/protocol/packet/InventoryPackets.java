@@ -147,8 +147,10 @@ public class InventoryPackets {
 
             final ItemStackResponse response = wrapper.read(BedrockTypes.ITEM_STACK_RESPONSE);
             if (response == null) {
+                ViaBedrock.getPlatform().getLogger().log(Level.INFO, "Item stack response: empty");
                 return;
             }
+            ViaBedrock.getPlatform().getLogger().log(Level.INFO, "Item stack response: result=" + response.result() + " requestId=" + response.requestId() + " containers=" + response.containers());
 
             if (response.result() == ItemStackResponse.RESULT_OK) {
                 // The response is the only authoritative sync for accepted requests: apply the returned
@@ -651,6 +653,7 @@ public class InventoryPackets {
             }
             if (actions != null && !actions.isEmpty()) {
                 final ItemStackRequest request = new ItemStackRequest(inventoryTracker.nextItemStackRequestId(), actions, new ArrayList<>(), 0);
+                ViaBedrock.getPlatform().getLogger().log(Level.INFO, "Item stack request: id=" + request.requestId() + " actions=" + actions);
                 final PacketWrapper requestPacket = PacketWrapper.create(ServerboundBedrockPackets.ITEM_STACK_REQUEST, wrapper.user());
                 requestPacket.write(BedrockTypes.ITEM_STACK_REQUEST, request);
                 requestPacket.sendToServer(BedrockProtocol.class);
