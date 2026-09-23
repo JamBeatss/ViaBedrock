@@ -154,6 +154,11 @@ public class InventoryPackets {
             ViaBedrock.getPlatform().getLogger().log(Level.INFO, "Item stack response: result=" + response.result() + " requestId=" + response.requestId() + " containers=" + response.containers());
 
             if (response.result() == ItemStackResponse.RESULT_OK) {
+                // Apply the accepted request's moves to the tracked containers first (the response only carries net ids and amounts)
+                final List<ItemStackRequestAction> acceptedActions = inventoryTracker.takePendingItemStackRequest(response.requestId());
+                if (acceptedActions != null) {
+                    applyAcceptedActions(inventoryTracker, acceptedActions);
+                }
                 // The response is the only authoritative sync for accepted requests: apply the returned
                 // net ids + amounts to the tracked containers (vanilla sends no follow-up inventory packets)
                 if (response.containers() != null) {
@@ -192,8 +197,17 @@ public class InventoryPackets {
                         PacketFactory.sendJavaContainerSetContent(wrapper.user(), container);
                     }
                 }
+                // Push the resulting state to the Java client: inventory, open container and cursor
+                PacketFactory.sendJavaContainerSetContent(wrapper.user(), inventoryTracker.getInventoryContainer());
+                if (inventoryTracker.getCurrentContainer() != null && inventoryTracker.getCurrentContainer().type() != ContainerType.INVENTORY) {
+                    PacketFactory.sendJavaContainerSetContent(wrapper.user(), inventoryTracker.getCurrentContainer());
+                }
+                final PacketWrapper acceptedCursorPacket = PacketWrapper.create(ClientboundPackets26_1.SET_CURSOR_ITEM, wrapper.user());
+                acceptedCursorPacket.write(VersionedTypes.V26_2.item, inventoryTracker.getHudContainer().getJavaItem(0)); // cursor item
+                acceptedCursorPacket.send(BedrockProtocol.class);
                 return;
             }
+            inventoryTracker.takePendingItemStackRequest(response.requestId());
 
             // The request was rejected: resync the inventory + open container + cursor to the server state
             ViaBedrock.getPlatform().getLogger().log(Level.FINE, "Item stack request " + response.requestId() + " rejected with result " + response.result());
@@ -658,6 +672,7 @@ public class InventoryPackets {
             if (actions != null && !actions.isEmpty()) {
                 final ItemStackRequest request = new ItemStackRequest(inventoryTracker.nextItemStackRequestId(), actions, new ArrayList<>(), 0);
                 ViaBedrock.getPlatform().getLogger().log(Level.INFO, "Item stack request: id=" + request.requestId() + " actions=" + actions);
+                inventoryTracker.trackItemStackRequest(request.requestId(), actions);
                 final PacketWrapper requestPacket = PacketWrapper.create(ServerboundBedrockPackets.ITEM_STACK_REQUEST, wrapper.user());
                 requestPacket.write(BedrockTypes.ITEM_STACK_REQUEST, request);
                 requestPacket.sendToServer(BedrockProtocol.class);
