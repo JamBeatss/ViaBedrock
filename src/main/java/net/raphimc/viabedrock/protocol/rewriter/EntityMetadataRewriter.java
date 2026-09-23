@@ -650,12 +650,16 @@ public class EntityMetadataRewriter {
             }
             case NAME -> {
                 // Custom name tags, e.g. from name tags or renamed entities. An empty name clears the custom name
-                if (entityData.getValue() instanceof String name) {
+                // Dropped items carry their item name, which the Bedrock client never renders as a name tag
+                if (entityData.getValue() instanceof String name && entity.javaType().isOrHasParent(EntityTypes26_3.LIVING_ENTITY)) {
                     javaEntityData.add(new EntityData(entity.getJavaEntityDataIndex(EntityDataFields.CUSTOM_NAME), VersionedTypes.V26_3.entityDataTypes().optionalComponentType, name.isEmpty() ? null : TextUtil.textComponentToNbt(TextUtil.stringToTextComponent(name))));
                 }
             }
             case NAMETAG_ALWAYS_SHOW -> {
                 // Whether the nametag is always visible (Java: only if a custom name is set)
+                if (!entity.javaType().isOrHasParent(EntityTypes26_3.LIVING_ENTITY)) {
+                    break; // Items, experience orbs and projectiles carry names the Bedrock client never renders
+                }
                 javaEntityData.add(new EntityData(entity.getJavaEntityDataIndex(EntityDataFields.CUSTOM_NAME_VISIBLE), VersionedTypes.V26_3.entityDataTypes().booleanType, readNumber(entityData).intValue() != 0));
             }
             case HURT -> {

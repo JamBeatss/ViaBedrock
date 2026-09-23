@@ -48,6 +48,7 @@ import net.raphimc.viabedrock.api.chunk.datapalette.BedrockDataPalette;
 import net.raphimc.viabedrock.api.chunk.section.BedrockChunkSection;
 import net.raphimc.viabedrock.api.chunk.section.BedrockChunkSectionImpl;
 import net.raphimc.viabedrock.api.model.BedrockBlockState;
+import net.raphimc.viabedrock.api.model.BlockState;
 import net.raphimc.viabedrock.protocol.BedrockProtocol;
 import net.raphimc.viabedrock.protocol.ServerboundBedrockPackets;
 import net.raphimc.viabedrock.protocol.data.ProtocolConstants;
@@ -61,6 +62,9 @@ import net.raphimc.viabedrock.protocol.rewriter.BlockStateRewriter;
 import net.raphimc.viabedrock.protocol.types.BedrockTypes;
 
 import java.util.*;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Objects;
 import java.util.logging.Level;
 import java.util.stream.Collectors;
 
@@ -375,6 +379,15 @@ public class ChunkTracker extends StoredObject {
             } else if (CustomBlockTags.ITEM_FRAME.equals(tag)) {
                 entityTracker.spawnItemFrame(blockPosition, blockStateRewriter.blockState(blockState));
             }
+        } else if (BlockEntityRewriter.isBlockEntity(tag)) {
+            // Unchanged block (e.g. a chest being opened): keep the block state its block entity derives (double chest side, bed colour)
+            final BedrockBlockEntity bedrockBlockEntity = this.getBlockEntity(blockPosition);
+            if (bedrockBlockEntity != null) {
+                final BlockEntity javaBlockEntity = BlockEntityRewriter.toJava(this.user(), blockState, bedrockBlockEntity);
+                if (javaBlockEntity instanceof BlockEntityWithBlockState blockEntityWithBlockState) {
+                    remappedBlockState = blockEntityWithBlockState.blockState();
+                }
+            }
         }
 
         return new IntObjectImmutablePair<>(remappedBlockState, null);
@@ -511,10 +524,28 @@ public class ChunkTracker extends StoredObject {
                     }
                 });
 
+                boolean hasDoor = false;
+                for (int i = 0; i < remappedBlockPalette.size() && !hasDoor; i++) {
+                    hasDoor = this.isJavaDoor(remappedBlockPalette.idByIndex(i));
+                }
+                if (hasDoor) {
+                    for (int y = 0; y < 16; y++) {
+                        for (int z = 0; z < 16; z++) {
+                            for (int x = 0; x < 16; x++) {
+                                final int javaState = remappedBlockPalette.idAt(x, y, z);
+                                if (this.isJavaDoor(javaState)) {
+                                    final BlockPosition doorPosition = new BlockPosition((chunk.getX() << 4) + x, this.minY + (idx << 4) + y, (chunk.getZ() << 4) + z);
+                                    remappedBlockPalette.setIdAt(x, y, z, this.fixDoorHalf(doorPosition, javaState));
+                                }
+                            }
+                        }
+                    }
+                }
                 for (int y = 0; y < 16; y++) {
                     for (int z = 0; z < 16; z++) {
                         for (int x = 0; x < 16; x++) {
-                            final String tag = paletteIndexBlockStateTags[remappedBlockPalette.paletteIndexAt(remappedBlockPalette.index(x, y, z))];
+                            final int paletteIndex = remappedBlockPalette.paletteIndexAt(remappedBlockPalette.index(x, y, z));
+                            final String tag = paletteIndex < paletteIndexBlockStateTags.length ? paletteIndexBlockStateTags[paletteIndex] : null; // Door fix-ups may append entries (doors have no tag)
                             if (tag != null) {
                                 if (BlockEntityRewriter.isBlockEntity(tag)) {
                                     final int absY = this.minY + (idx << 4) + y;
@@ -781,6 +812,72 @@ public class ChunkTracker extends StoredObject {
             this.size++;
         }
 
+    }
+
+
+    /**
+     * Bedrock keeps a door's facing and open state on the lower half and the hinge on the upper half, Java needs all of them on both halves.
+     */
+    public int fixDoorHalf(final BlockPosition position, final int javaBlockState) {
+        final BlockState state = BedrockProtocol.MAPPINGS.getJavaBlockStates().inverse().get(javaBlockState);
+        if (state == null || !state.identifier().endsWith("_door") || !state.properties().containsKey("half")) {
+            return javaBlockState;
+        }
+        final boolean upper = "upper".equals(state.properties().get("half"));
+        final BlockPosition otherPosition = new BlockPosition(position.x(), position.y() + (upper ? -1 : 1), position.z());
+        final BlockState other = BedrockProtocol.MAPPINGS.getJavaBlockStates().inverse().get(this.getJavaBlockState(otherPosition));
+        if (other == null || !other.identifier().equals(state.identifier())) {
+            return javaBlockState;
+        }
+        final Map<String, String> replacements = new HashMap<>();
+        if (upper) {
+            replacements.put("facing", other.properties().get("facing"));
+            replacements.put("open", other.properties().get("open"));
+            replacements.put("powered", other.properties().get("powered"));
+        } else {
+            replacements.put("hinge", other.properties().get("hinge"));
+        }
+        replacements.values().removeIf(Objects::isNull);
+        final Integer fixed = BedrockProtocol.MAPPINGS.getJavaBlockStates().get(state.replaceProperties(replacements));
+        return fixed != null ? fixed : javaBlockState;
+    }
+
+    public boolean isJavaDoor(final int javaBlockState) {
+        final BlockState state = BedrockProtocol.MAPPINGS.getJavaBlockStates().inverse().get(javaBlockState);
+        return state != null && state.identifier().endsWith("_door") && state.properties().containsKey("half");
+    }
+
+
+    /**
+     * Returns the other half of the bed at the given position, or null if there is no bed there.
+     */
+    public BlockPosition bedPartner(final BlockPosition position) {
+        final BlockStateRewriter blockStateRewriter = this.user().get(BlockStateRewriter.class);
+        final int bedrockState = this.getBlockState(position);
+        if (!CustomBlockTags.BED.equals(blockStateRewriter.tag(bedrockState))) {
+            return null;
+        }
+        final BlockState state = blockStateRewriter.blockState(bedrockState);
+        if (state == null) return null;
+        final String direction = state.properties().get("direction");
+        final String headPiece = state.properties().get("head_piece_bit");
+        if (direction == null || headPiece == null) return null;
+        int dx = 0, dz = 0;
+        switch (direction) {
+            case "0" -> dz = 1;  // south
+            case "1" -> dx = -1; // west
+            case "2" -> dz = -1; // north
+            case "3" -> dx = 1;  // east
+            default -> {
+                return null;
+            }
+        }
+        if (headPiece.equals("1") || headPiece.equals("true")) {
+            dx = -dx;
+            dz = -dz;
+        }
+        final BlockPosition partner = new BlockPosition(position.x() + dx, position.y(), position.z() + dz);
+        return CustomBlockTags.BED.equals(blockStateRewriter.tag(this.getBlockState(partner))) ? partner : null;
     }
 
 }

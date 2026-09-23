@@ -445,10 +445,18 @@ public class ClientPlayerEntity extends PlayerEntity {
         this.requestedDismount = requestedDismount;
     }
 
+    private boolean serverHealthReceived = false;
+
     @Override
     protected boolean translateAttribute(final EntityAttribute attribute, final PacketWrapper javaAttributes, final AtomicInteger attributeCount, final List<EntityData> javaEntityData) {
         return switch (attribute.name()) {
             case "minecraft:health", "minecraft:player.hunger", "minecraft:player.saturation" -> {
+                if (attribute.name().equals("minecraft:health")) {
+                    this.serverHealthReceived = true;
+                }
+                if (!this.serverHealthReceived) {
+                    yield true; // Don't send a placeholder health first: the real value would then look like damage (red flash on join)
+                }
                 final EntityAttribute health = attribute.name().equals("minecraft:health") ? attribute : this.attributes.get("minecraft:health");
                 final EntityAttribute hunger = attribute.name().equals("minecraft:player.hunger") ? attribute : this.attributes.get("minecraft:player.hunger");
                 final EntityAttribute saturation = attribute.name().equals("minecraft:player.saturation") ? attribute : this.attributes.get("minecraft:player.saturation");

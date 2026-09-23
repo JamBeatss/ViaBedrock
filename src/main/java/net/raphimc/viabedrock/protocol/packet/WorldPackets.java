@@ -89,7 +89,21 @@ public class WorldPackets {
             return;
         }
 
-        wrapper.write(Types.VAR_INT, remappedBlock.keyInt()); // block state
+        final int javaBlockState = chunkTracker.fixDoorHalf(position, remappedBlock.keyInt());
+        wrapper.write(Types.VAR_INT, javaBlockState); // block state
+        if (chunkTracker.isJavaDoor(javaBlockState)) { // The other half depends on this one: resend it
+            final BlockPosition above = new BlockPosition(position.x(), position.y() + 1, position.z());
+            final BlockPosition below = new BlockPosition(position.x(), position.y() - 1, position.z());
+            for (BlockPosition otherHalf : new BlockPosition[]{above, below}) {
+                final int otherState = chunkTracker.getJavaBlockState(otherHalf);
+                if (chunkTracker.isJavaDoor(otherState)) {
+                    final PacketWrapper otherUpdate = PacketWrapper.create(ClientboundPackets26_3.BLOCK_UPDATE, wrapper.user());
+                    otherUpdate.write(Types.BLOCK_POSITION1_14, otherHalf); // position
+                    otherUpdate.write(Types.VAR_INT, chunkTracker.fixDoorHalf(otherHalf, otherState)); // block state
+                    otherUpdate.scheduleSend(BedrockProtocol.class);
+                }
+            }
+        }
 
         if (remappedBlock.value() != null) {
             wrapper.send(BedrockProtocol.class);
@@ -434,7 +448,7 @@ public class WorldPackets {
 
                     final BlockPosition chunkPosition = new BlockPosition(entry.position().x() >> 4, entry.position().y() >> 4, entry.position().z() >> 4);
                     final BlockPosition relative = new BlockPosition(entry.position().x() & 0xF, entry.position().y() & 0xF, entry.position().z() & 0xF);
-                    blockChanges.computeIfAbsent(chunkPosition, k -> new ArrayList<>()).add(new BlockChangeRecord1_16_2(relative.x(), relative.y(), relative.z(), remappedBlock.keyInt()));
+                    blockChanges.computeIfAbsent(chunkPosition, k -> new ArrayList<>()).add(new BlockChangeRecord1_16_2(relative.x(), relative.y(), relative.z(), chunkTracker.fixDoorHalf(entry.position(), remappedBlock.keyInt())));
                 }
             }
 
