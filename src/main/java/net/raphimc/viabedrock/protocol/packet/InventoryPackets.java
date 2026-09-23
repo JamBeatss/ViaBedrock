@@ -155,9 +155,9 @@ public class InventoryPackets {
 
             if (response.result() == ItemStackResponse.RESULT_OK) {
                 // Apply the accepted request's moves to the tracked containers first (the response only carries net ids and amounts)
-                final List<ItemStackRequestAction> acceptedActions = inventoryTracker.takePendingItemStackRequest(response.requestId());
-                if (acceptedActions != null) {
-                    applyAcceptedActions(inventoryTracker, acceptedActions);
+                final InventoryTracker.PendingItemStackRequest accepted = inventoryTracker.takePendingItemStackRequest(response.requestId());
+                if (accepted != null) {
+                    applyAcceptedActions(inventoryTracker, accepted.actions(), accepted.sourceSnapshots());
                 }
                 // The response is the only authoritative sync for accepted requests: apply the returned
                 // net ids + amounts to the tracked containers (vanilla sends no follow-up inventory packets)
@@ -675,7 +675,7 @@ public class InventoryPackets {
             if (actions != null && !actions.isEmpty()) {
                 final ItemStackRequest request = new ItemStackRequest(inventoryTracker.nextItemStackRequestId(), actions, new ArrayList<>(), 0);
                 ViaBedrock.getPlatform().getLogger().log(Level.INFO, "Item stack request: id=" + request.requestId() + " actions=" + actions);
-                inventoryTracker.trackItemStackRequest(request.requestId(), actions);
+                inventoryTracker.trackItemStackRequest(request.requestId(), actions, snapshotSources(inventoryTracker, actions));
                 final PacketWrapper requestPacket = PacketWrapper.create(ServerboundBedrockPackets.ITEM_STACK_REQUEST, wrapper.user());
                 requestPacket.write(BedrockTypes.ITEM_STACK_REQUEST, request);
                 requestPacket.sendToServer(BedrockProtocol.class);
@@ -1159,13 +1159,27 @@ public class InventoryPackets {
         return new TrackedSlot(container, resolvedIndex);
     }
 
-    private static void moveTracked(final TrackedSlot from, final TrackedSlot to, final int amount) {
+    private static List<BedrockItem> snapshotSources(final InventoryTracker inventoryTracker, final List<ItemStackRequestAction> actions) {
+        final List<BedrockItem> snapshots = new ArrayList<>(actions.size());
+        for (ItemStackRequestAction action : actions) {
+            final TrackedSlot from = resolveRequestSlot(inventoryTracker, action.source());
+            final BedrockItem item = from != null ? from.container().getItem(from.slot()) : null;
+            snapshots.add(item == null || item.isEmpty() ? null : item.copy());
+        }
+        return snapshots;
+    }
+
+    private static void moveTracked(final TrackedSlot from, final TrackedSlot to, final int amount, final BedrockItem sourceSnapshot) {
         if (from == null || to == null) {
             return;
         }
-        final BedrockItem source = from.container().getItem(from.slot());
+        BedrockItem source = from.container().getItem(from.slot());
         if (source == null || source.isEmpty()) {
-            return;
+            if (sourceSnapshot == null) {
+                return;
+            }
+            // The server already emptied the source slot before answering: move the snapshot taken at request time
+            source = sourceSnapshot;
         }
         final int moved = Math.min(amount, source.amount());
         final BedrockItem target = to.container().getItem(to.slot());
@@ -1178,6 +1192,9 @@ public class InventoryPackets {
             merged.setAmount(target.amount() + moved);
             to.container().setItem(to.slot(), merged);
         }
+        if (source == sourceSnapshot) {
+            return; // The source slot is already empty on our side
+        }
         if (source.amount() - moved <= 0) {
             from.container().setItem(from.slot(), BedrockItem.empty());
         } else {
@@ -1187,10 +1204,12 @@ public class InventoryPackets {
         }
     }
 
-    private static void applyAcceptedActions(final InventoryTracker inventoryTracker, final List<ItemStackRequestAction> actions) {
-        for (ItemStackRequestAction action : actions) {
+    private static void applyAcceptedActions(final InventoryTracker inventoryTracker, final List<ItemStackRequestAction> actions, final List<BedrockItem> sourceSnapshots) {
+        for (int i = 0; i < actions.size(); i++) {
+            final ItemStackRequestAction action = actions.get(i);
+            final BedrockItem snapshot = sourceSnapshots != null && i < sourceSnapshots.size() ? sourceSnapshots.get(i) : null;
             switch (action.type()) {
-                case Take, Place, PlaceInItemContainer, TakeFromItemContainer -> moveTracked(resolveRequestSlot(inventoryTracker, action.source()), resolveRequestSlot(inventoryTracker, action.destination()), action.amount() == null ? 0 : action.amount());
+                case Take, Place, PlaceInItemContainer, TakeFromItemContainer -> moveTracked(resolveRequestSlot(inventoryTracker, action.source()), resolveRequestSlot(inventoryTracker, action.destination()), action.amount() == null ? 0 : action.amount(), snapshot);
                 case Swap -> {
                     final TrackedSlot a = resolveRequestSlot(inventoryTracker, action.source());
                     final TrackedSlot b = resolveRequestSlot(inventoryTracker, action.destination());

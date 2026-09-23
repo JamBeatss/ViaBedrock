@@ -75,13 +75,16 @@ public class InventoryTracker extends StoredObject {
     /**
      * Allocates the next item stack request id. The Bedrock server expects strictly increasing ids.
      */
-    private final java.util.Map<Integer, java.util.List<net.raphimc.viabedrock.protocol.model.inventory.ItemStackRequestAction>> pendingItemStackRequests = new java.util.HashMap<>();
-
-    public void trackItemStackRequest(final int requestId, final java.util.List<net.raphimc.viabedrock.protocol.model.inventory.ItemStackRequestAction> actions) {
-        this.pendingItemStackRequests.put(requestId, actions);
+    public record PendingItemStackRequest(java.util.List<net.raphimc.viabedrock.protocol.model.inventory.ItemStackRequestAction> actions, java.util.List<net.raphimc.viabedrock.protocol.model.BedrockItem> sourceSnapshots) {
     }
 
-    public java.util.List<net.raphimc.viabedrock.protocol.model.inventory.ItemStackRequestAction> takePendingItemStackRequest(final int requestId) {
+    private final java.util.Map<Integer, PendingItemStackRequest> pendingItemStackRequests = new java.util.HashMap<>();
+
+    public void trackItemStackRequest(final int requestId, final java.util.List<net.raphimc.viabedrock.protocol.model.inventory.ItemStackRequestAction> actions, final java.util.List<net.raphimc.viabedrock.protocol.model.BedrockItem> sourceSnapshots) {
+        this.pendingItemStackRequests.put(requestId, new PendingItemStackRequest(actions, sourceSnapshots));
+    }
+
+    public PendingItemStackRequest takePendingItemStackRequest(final int requestId) {
         return this.pendingItemStackRequests.remove(requestId);
     }
 
