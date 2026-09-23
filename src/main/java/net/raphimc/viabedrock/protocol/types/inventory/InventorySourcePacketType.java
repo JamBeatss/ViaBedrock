@@ -15,12 +15,12 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-package net.raphimc.viabedrock.experimental.types.inventory;
+package net.raphimc.viabedrock.protocol.types.inventory;
 
 import com.viaversion.viaversion.api.type.Type;
 import com.viaversion.viaversion.api.type.Types;
 import io.netty.buffer.ByteBuf;
-import net.raphimc.viabedrock.experimental.model.inventory.InventorySource;
+import net.raphimc.viabedrock.protocol.model.inventory.InventorySource;
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.ContainerID;
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.InventorySourceType;
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.InventorySource_InventorySourceFlags;
@@ -42,8 +42,8 @@ public class InventorySourcePacketType extends Type<InventorySource> {
 
         int containerId = 0;
         InventorySource_InventorySourceFlags flag = InventorySource_InventorySourceFlags.No_Flag;
-        if (buffer.readBoolean() && buffer.readBoolean()) containerId = buffer.readByte();
-        if (buffer.readBoolean() && buffer.readBoolean()) flag = InventorySource_InventorySourceFlags.getByValue(BedrockTypes.UNSIGNED_VAR_INT.read(buffer));
+        if (buffer.readBoolean()) containerId = buffer.readByte();
+        if (buffer.readBoolean()) flag = InventorySource_InventorySourceFlags.getByValue(BedrockTypes.UNSIGNED_VAR_INT.read(buffer));
 
         switch (type) {
             case Container_Inventory, Non_Implemented_Feature_TODO -> {
@@ -61,16 +61,12 @@ public class InventorySourcePacketType extends Type<InventorySource> {
     @Override
     public void write(ByteBuf buffer, InventorySource value) {
         BedrockTypes.UNSIGNED_VAR_INT.write(buffer, value.type().getValue());
-
-        Types.BOOLEAN.write(buffer, true);
         if (value.type() == InventorySourceType.Container_Inventory || value.type() == InventorySourceType.Non_Implemented_Feature_TODO) {
             Types.BOOLEAN.write(buffer, true);
             buffer.writeByte(value.containerId());
         } else {
             Types.BOOLEAN.write(buffer, false);
         }
-
-        Types.BOOLEAN.write(buffer, true);
         if (value.type() == InventorySourceType.World_Interaction) {
             Types.BOOLEAN.write(buffer, true);
             BedrockTypes.UNSIGNED_VAR_INT.write(buffer, value.flags().getValue());
