@@ -2,7 +2,7 @@
 
 This branch holds only what was tried by hand and seen working in game. Setup: a Bedrock 1.26.51 Realm, a Java 26.3 client and ViaProxy 3.4.14-SNAPSHOT (`1546174`), on 2026-09-22.
 
-It is the `bedrock-1.26.51` branch cut at the last tested fix, with the untested sleeping pose removed. Everything added after that (crafting, drag placement, stack sizes, boats, world clocks, cooldowns, trading, enchanting, anvil, beacon, books, End credits, toasts, falling block fixes, the code review fixes) lives only on `bedrock-1.26.51`.
+It is the `bedrock-1.26.51` branch cut at the last tested fix, plus the falling block fix, with the untested sleeping pose removed. Everything added after that (crafting, drag placement, stack sizes, boats, world clocks, cooldowns, trading, enchanting, anvil, beacon, books, End credits, toasts, the hurt tilt suppression on joining, the code review fixes) lives only on `bedrock-1.26.51`.
 
 ## Seen working in game
 
@@ -16,6 +16,7 @@ It is the `bedrock-1.26.51` branch cut at the last tested fix, with the untested
 - Breaking a bed removes both halves
 - Dropped items and XP orbs no longer show name tags
 - No red hurt flash on joining
+- Falling gravel shows and lands correctly
 
 Also checked, but in the proxy log rather than by eye: hunger values arrive from the Realm.
 
@@ -25,7 +26,6 @@ Also checked, but in the proxy log rather than by eye: hunger values arrive from
 - Walking through doors sometimes pulls you back
 - A small sideways hurt tilt on joining
 - Fired arrows render dark
-- Gravel falling onto a torch leaves a ghost block
 
 ## Base
 
