@@ -1242,9 +1242,50 @@ public class InventoryPackets {
         return new ItemStackRequestSlot(new FullContainerName(ContainerEnumName.InventoryContainer, null), (byte) bedrockIndex, netIdOf(item));
     }
 
+    private static int armorSlotFor(final InventoryTracker inventoryTracker, final BedrockItem item) {
+        final String identifier = inventoryTracker.user().get(ItemRewriter.class).getItems().inverse().get(item.identifier());
+        if (identifier == null) return -1;
+        if (identifier.endsWith("_helmet") || identifier.equals("minecraft:carved_pumpkin") || identifier.endsWith("_skull") || identifier.endsWith("_head")) return 0;
+        if (identifier.endsWith("_chestplate") || identifier.equals("minecraft:elytra")) return 1;
+        if (identifier.endsWith("_leggings")) return 2;
+        if (identifier.endsWith("_boots")) return 3;
+        return -1;
+    }
+
     private static List<ItemStackRequestAction> buildQuickMoveActions(final InventoryTracker inventoryTracker, final Container viewContainer, final Container clickedContainer, final int javaSlot, final boolean containerView) {
         final Container inventory = inventoryTracker.getInventoryContainer();
         final List<ItemStackRequestAction> actions = new ArrayList<>();
+        if (clickedContainer == inventory && !containerView) {
+            final Container armor = inventoryTracker.getArmorContainer();
+            if (javaSlot >= 5 && javaSlot <= 8) { // Armor slot -> first free main inventory slot, then hotbar
+                final int armorIndex = javaSlot - 5;
+                final BedrockItem worn = armor.getItem(armorIndex);
+                if (worn == null || worn.isEmpty()) return actions;
+                final ItemStackRequestSlot armorSource = new ItemStackRequestSlot(new FullContainerName(ContainerEnumName.ArmorContainer, null), (byte) armorIndex, netIdOf(worn));
+                for (int i : new int[]{9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 0, 1, 2, 3, 4, 5, 6, 7, 8}) {
+                    final BedrockItem existing = inventory.getItem(i);
+                    if (existing == null || existing.isEmpty()) {
+                        actions.add(ItemStackRequestAction.place(worn.amount(), armorSource, playerInventorySlot(inventoryTracker, i)));
+                        return actions;
+                    }
+                }
+                return actions;
+            }
+            final int sourceIndex = inventory.bedrockSlot(javaSlot);
+            if (sourceIndex >= 0 && sourceIndex < 36) { // Armor piece -> its empty armor slot
+                final BedrockItem moving = inventory.getItem(sourceIndex);
+                if (moving != null && !moving.isEmpty()) {
+                    final int armorIndex = armorSlotFor(inventoryTracker, moving);
+                    if (armorIndex != -1) {
+                        final BedrockItem worn = armor.getItem(armorIndex);
+                        if (worn == null || worn.isEmpty()) {
+                            actions.add(ItemStackRequestAction.place(1, playerInventorySlot(inventoryTracker, sourceIndex), new ItemStackRequestSlot(new FullContainerName(ContainerEnumName.ArmorContainer, null), (byte) armorIndex, 0)));
+                            return actions;
+                        }
+                    }
+                }
+            }
+        }
         final int sourceIndex = clickedContainer.bedrockSlot(javaSlot);
         if (sourceIndex < 0 || sourceIndex >= clickedContainer.size()) {
             return null;
