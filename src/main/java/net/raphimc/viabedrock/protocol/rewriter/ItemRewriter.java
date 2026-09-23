@@ -74,6 +74,7 @@ public class ItemRewriter extends StoredObject {
     private final Map<String, ItemEntry> itemEntries;
     private final Int2ObjectMap<IntSortedSet> blockItemValidBlockStates;
     private final Type<BedrockItem> itemType;
+    private final Type<BedrockItem> itemInstanceType;
     private final Type<BedrockItem> optionalItemType;
     private final Type<BedrockItem[]> itemArrayType;
     private final Type<BedrockItem> newItemType;
@@ -120,6 +121,7 @@ public class ItemRewriter extends StoredObject {
         }
 
         this.itemType = new BedrockItemType(this.items.getOrDefault("minecraft:shield", 0), this.blockItemValidBlockStates, false);
+        this.itemInstanceType = new BedrockItemType(this.items.getOrDefault("minecraft:shield", 0), this.blockItemValidBlockStates, false, true);
         this.optionalItemType = new OptionalType<>(this.itemType);
         this.itemArrayType = new ArrayType<>(this.itemType, BedrockTypes.UNSIGNED_VAR_INT);
         this.newItemType = new NetworkItemStackDescriptorType(this.items.getOrDefault("minecraft:shield", 0), this.blockItemValidBlockStates, false);
@@ -354,6 +356,10 @@ public class ItemRewriter extends StoredObject {
 
     public Set<String> getComponentItems() {
         return this.componentItems;
+    }
+
+    public Type<BedrockItem> itemInstanceType() {
+        return this.itemInstanceType;
     }
 
     public Type<BedrockItem> itemType() {

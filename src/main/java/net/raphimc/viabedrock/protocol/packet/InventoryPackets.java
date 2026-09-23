@@ -248,14 +248,14 @@ public class InventoryPackets {
             for (int i = 0; i < groupsCount; i++) {
                 wrapper.read(Types.UNSIGNED_BYTE); // category
                 wrapper.read(BedrockTypes.STRING); // name
-                wrapper.read(itemRewriter.itemType()); // icon item
+                wrapper.read(itemRewriter.itemInstanceType()); // icon item
             }
 
             final int itemsCount = wrapper.read(BedrockTypes.UNSIGNED_VAR_INT); // item entries count
             final List<InventoryTracker.CreativeItem> creativeItems = new ArrayList<>(itemsCount);
             for (int i = 0; i < itemsCount; i++) {
                 final int netId = wrapper.read(BedrockTypes.UNSIGNED_VAR_INT); // net id
-                final BedrockItem item = wrapper.read(itemRewriter.itemType()); // item
+                final BedrockItem item = wrapper.read(itemRewriter.itemInstanceType()); // item
                 wrapper.read(BedrockTypes.UNSIGNED_VAR_INT); // group id
                 if (!item.isEmpty()) {
                     creativeItems.add(new InventoryTracker.CreativeItem(item, netId));

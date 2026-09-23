@@ -30,19 +30,32 @@ public class BedrockItemType extends Type<BedrockItem> {
     private final int blockingId;
     private final Int2ObjectMap<IntSortedSet> blockItemValidBlockStates;
     private final boolean writeItemNetId;
+    private final boolean instanceDescriptor;
 
     public BedrockItemType(final int blockingId, final Int2ObjectMap<IntSortedSet> blockItemValidBlockStates, final boolean writeItemNetId) {
+        this(blockingId, blockItemValidBlockStates, writeItemNetId, false);
+    }
+
+    public BedrockItemType(final int blockingId, final Int2ObjectMap<IntSortedSet> blockItemValidBlockStates, final boolean writeItemNetId, final boolean instanceDescriptor) {
         super(BedrockItem.class);
 
         this.blockingId = blockingId;
         this.blockItemValidBlockStates = blockItemValidBlockStates;
         this.writeItemNetId = writeItemNetId;
+        this.instanceDescriptor = instanceDescriptor;
     }
 
     @Override
     public BedrockItem read(ByteBuf buffer) {
         final int id = BedrockTypes.VAR_INT.read(buffer);
         if (id == 0 || id == -1) {
+            if (this.instanceDescriptor && id == 0) {
+                // NetworkItemInstanceDescriptor always carries every field, even for an empty item
+                buffer.readUnsignedShortLE(); // amount
+                BedrockTypes.UNSIGNED_VAR_INT.read(buffer); // data
+                BedrockTypes.VAR_INT.read(buffer); // block runtime id
+                buffer.skipBytes(BedrockTypes.UNSIGNED_VAR_INT.read(buffer)); // user data
+            }
             return BedrockItem.empty();
         }
 
