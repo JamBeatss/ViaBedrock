@@ -66,6 +66,9 @@ import java.util.logging.Level;
 
 public class EntityPackets {
 
+    // The server replays a hurt event right after joining; ignore it for the client player during these ticks
+    private static final int SPAWN_HURT_GRACE_TICKS = 40;
+
     private static final int INTERPOLATION_STEP_TICKS = 3;
     private static final float PAINTING_POS_OFFSET = -0.46875F;
     private static final SwingAnimation DEFAULT_SWING_ANIMATION = new SwingAnimation(EnumTypes.SWING_ANIMATION1_21_11.idFromName("whack"), 6);
@@ -448,6 +451,12 @@ public class EntityPackets {
             }
             switch (event) {
                 case HURT -> {
+                    if (entity == entityTracker.getClientPlayer() && entityTracker.getClientPlayer().age() < SPAWN_HURT_GRACE_TICKS) {
+                        // The server replays a hurt event right after joining; on Java it tilts the camera like real damage
+                        ViaBedrock.getPlatform().getLogger().log(Level.FINE, "Ignoring hurt event for the client player right after spawn (cause " + data + ")");
+                        wrapper.cancel();
+                        return;
+                    }
                     final CompoundTag damageTypeRegistry = gameSession.getJavaRegistries().getCompoundTag(RegistryKeys.DAMAGE_TYPE);
                     final SharedTypes_Legacy_ActorDamageCause damageCause = SharedTypes_Legacy_ActorDamageCause.getByValue(data, SharedTypes_Legacy_ActorDamageCause.Override);
                     final CompoundTag damageTypeEntry = damageTypeRegistry.getCompoundTag(BedrockProtocol.MAPPINGS.getBedrockToJavaDamageCauses().get(damageCause));

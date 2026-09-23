@@ -49,6 +49,7 @@ import com.viaversion.viaversion.libs.mcstructs.text.components.StringComponent;
 import com.viaversion.viaversion.libs.mcstructs.text.components.TranslationComponent;
 import com.viaversion.viaversion.protocols.v26_2to26_3.packet.ClientboundPackets26_3;
 import com.viaversion.viaversion.protocols.v26_2to26_3.packet.ServerboundPackets26_3;
+import com.viaversion.viaversion.util.Key;
 import net.lenni0451.mcstructs_bedrock.forms.Form;
 import net.lenni0451.mcstructs_bedrock.forms.elements.*;
 import net.lenni0451.mcstructs_bedrock.forms.serializer.FormSerializer;
@@ -184,6 +185,12 @@ public class InventoryPackets {
             wrapper.write(Types.VAR_INT, (int) container.javaContainerId()); // container id
             wrapper.write(Types.SHORT, (short) javaId); // property id
             wrapper.write(Types.SHORT, (short) value); // value
+        });
+        protocol.registerClientbound(ClientboundBedrockPackets.PLAYER_START_ITEM_COOLDOWN, ClientboundPackets26_3.COOLDOWN, wrapper -> {
+            final String category = wrapper.read(BedrockTypes.STRING); // item category (ender_pearl, shield, goat_horn, ...)
+            final int ticks = wrapper.read(BedrockTypes.VAR_INT); // duration
+            wrapper.write(Types.STRING, Key.namespaced(category)); // cooldown group
+            wrapper.write(Types.VAR_INT, ticks); // duration
         });
         protocol.registerClientbound(ClientboundBedrockPackets.CRAFTING_DATA, null, CraftingTranslator::handleCraftingData);
         protocol.registerClientbound(ClientboundBedrockPackets.CREATIVE_CONTENT, null, wrapper -> {

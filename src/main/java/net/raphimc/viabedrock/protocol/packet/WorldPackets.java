@@ -66,6 +66,7 @@ import net.raphimc.viabedrock.protocol.types.array.ByteArrayType;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.function.Consumer;
 import java.util.logging.Level;
@@ -520,6 +521,58 @@ public class WorldPackets {
             public void register() {
                 map(BedrockTypes.VAR_INT, Types.VAR_INT); // radius
                 handler(wrapper -> wrapper.user().get(ChunkTracker.class).setRadius(wrapper.get(Types.VAR_INT, 0)));
+            }
+        });
+        protocol.registerClientbound(ClientboundBedrockPackets.SYNC_WORLD_CLOCKS, null, wrapper -> {
+            // Bedrock 26.x keeps the time of day in world clocks; forward the overworld clock as a regular time update
+            wrapper.cancel();
+            final GameSessionStorage gameSession = wrapper.user().get(GameSessionStorage.class);
+            final int payloadType = wrapper.read(BedrockTypes.UNSIGNED_VAR_INT); // payload type
+            Integer overworldTime = null;
+            if (payloadType == 0) { // sync state
+                final int count = wrapper.read(BedrockTypes.UNSIGNED_VAR_INT);
+                for (int i = 0; i < count; i++) {
+                    final long clockId = wrapper.read(BedrockTypes.UNSIGNED_VAR_LONG); // clock id
+                    final int time = wrapper.read(BedrockTypes.VAR_INT); // time
+                    final boolean paused = wrapper.read(Types.BOOLEAN); // paused
+                    if (clockId == gameSession.getOverworldClockId()) {
+                        overworldTime = time;
+                    } else if (gameSession.getOverworldClockId() == -1 && !paused && overworldTime == null) {
+                        // The clock registry arrives during configuration (not seen here): the running clock is the overworld's
+                        overworldTime = time;
+                        ViaBedrock.getPlatform().getLogger().log(Level.FINE, "Using world clock " + clockId + " as the overworld clock (time " + time + ")");
+                        gameSession.setOverworldClockId(clockId);
+                    }
+                }
+            } else if (payloadType == 1) { // initialize registry
+                final int count = wrapper.read(BedrockTypes.UNSIGNED_VAR_INT);
+                for (int i = 0; i < count; i++) {
+                    final long clockId = wrapper.read(BedrockTypes.UNSIGNED_VAR_LONG); // id
+                    final String name = wrapper.read(BedrockTypes.STRING); // name
+                    final int time = wrapper.read(BedrockTypes.VAR_INT); // time
+                    wrapper.read(Types.BOOLEAN); // paused
+                    final int markerCount = wrapper.read(BedrockTypes.UNSIGNED_VAR_INT);
+                    for (int j = 0; j < markerCount; j++) {
+                        wrapper.read(BedrockTypes.UNSIGNED_VAR_LONG); // marker id
+                        wrapper.read(BedrockTypes.STRING); // marker name
+                        wrapper.read(BedrockTypes.VAR_INT); // marker time
+                        if (wrapper.read(Types.BOOLEAN)) {
+                            wrapper.read(BedrockTypes.INT_LE); // period
+                        }
+                    }
+                    ViaBedrock.getPlatform().getLogger().log(Level.FINE, "World clock registered: id=" + clockId + " name=" + name + " time=" + time);
+                    if (name.toLowerCase(Locale.ROOT).contains("overworld") || (gameSession.getOverworldClockId() == -1 && i == 0)) {
+                        gameSession.setOverworldClockId(clockId);
+                        overworldTime = time;
+                    }
+                }
+            } else {
+                return; // time marker changes
+            }
+            if (overworldTime != null) {
+                final PacketWrapper setTime = PacketWrapper.create(ClientboundBedrockPackets.SET_TIME, wrapper.user());
+                setTime.write(BedrockTypes.VAR_INT, overworldTime); // time of day
+                setTime.send(BedrockProtocol.class, false);
             }
         });
         protocol.registerClientbound(ClientboundBedrockPackets.SET_TIME, ClientboundPackets26_3.SET_TIME, wrapper -> {

@@ -37,7 +37,24 @@ import java.util.Set;
 public class GameSessionStorage extends StoredObject {
 
     private CompoundTag javaRegistries;
+    private long overworldClockId = -1;
+    private boolean showingCredits;
 
+    public boolean isShowingCredits() {
+        return this.showingCredits;
+    }
+
+    public void setShowingCredits(final boolean showingCredits) {
+        this.showingCredits = showingCredits;
+    }
+
+    public long getOverworldClockId() {
+        return this.overworldClockId;
+    }
+
+    public void setOverworldClockId(final long overworldClockId) {
+        this.overworldClockId = overworldClockId;
+    }
     private CompoundTag bedrockBiomeDefinitions = BedrockProtocol.MAPPINGS.getBedrockBiomeDefinitions();
     private final Map<String, IntIntPair> bedrockDimensionDefinitions = new HashMap<>();
     private final Set<String> availableEntityIdentifiers = new HashSet<>(BedrockProtocol.MAPPINGS.getBedrockEntities().keySet());
