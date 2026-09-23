@@ -398,6 +398,7 @@ public class InventoryPackets {
 
             final InventoryTracker inventoryTracker = wrapper.user().get(InventoryTracker.class);
             final Container container = inventoryTracker.getContainerClientbound((byte) containerId, containerName, storageItem);
+            ViaBedrock.getPlatform().getLogger().log(Level.INFO, "INVENTORY_CONTENT from server: containerId=" + containerId + " items=" + items.length + " name=" + containerName + " -> " + (container == null ? "unknown container" : container.type()));
             if (container != null && container.setItems(items)) {
                 PacketFactory.writeJavaContainerSetContent(wrapper, container);
             } else {
@@ -414,6 +415,7 @@ public class InventoryPackets {
 
             final InventoryTracker inventoryTracker = wrapper.user().get(InventoryTracker.class);
             final Container container = inventoryTracker.getContainerClientbound((byte) containerId, containerName, storageItem);
+            ViaBedrock.getPlatform().getLogger().log(Level.INFO, "INVENTORY_SLOT from server: containerId=" + containerId + " slot=" + slot + " name=" + containerName + " item=" + (item.isEmpty() ? "empty" : item.identifier() + " x" + item.amount() + " netId=" + item.netId()) + " -> " + (container == null ? "unknown container" : container.type()));
             if (container != null && container.setItem(slot, item)) {
                 if (container.type() == ContainerType.HUD && slot == 0) { // cursor item
                     wrapper.setPacketType(ClientboundPackets26_1.SET_CURSOR_ITEM);
@@ -659,7 +661,8 @@ public class InventoryPackets {
             }
 
             final List<ItemStackRequestAction> actions;
-            ViaBedrock.getPlatform().getLogger().log(Level.INFO, "Container click: container=" + container.type() + " slot=" + slot + " button=" + button + " action=" + action + " serverAuthoritative=" + gameSession.isInventoryServerAuthoritative());
+            final BedrockItem trackedCursor = inventoryTracker.getHudContainer().getItem(0);
+            ViaBedrock.getPlatform().getLogger().log(Level.INFO, "Container click: container=" + container.type() + " slot=" + slot + " button=" + button + " action=" + action + " serverAuthoritative=" + gameSession.isInventoryServerAuthoritative() + " trackedCursor=" + (trackedCursor == null || trackedCursor.isEmpty() ? "empty" : trackedCursor.identifier() + " x" + trackedCursor.amount() + " netId=" + trackedCursor.netId()));
             if (gameSession.isInventoryServerAuthoritative()) {
                 actions = buildItemStackRequestActions(inventoryTracker, container, slot, button, action);
             } else {
