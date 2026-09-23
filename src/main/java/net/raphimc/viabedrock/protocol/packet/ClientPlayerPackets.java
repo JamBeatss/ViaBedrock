@@ -582,7 +582,10 @@ public class ClientPlayerPackets {
             wrapper.read(Types.BOOLEAN); // world border, this doesn't exist on Bedrock.
 
             // Send back block changed ack with the sequence, this will help with ghost blocks.
-            PacketFactory.sendJavaBlockChangedAck(wrapper.user(), wrapper.read(Types.VAR_INT));
+            // Acknowledge a little later so the server's block update (e.g. a door opening) arrives first; an immediate ack makes the Java client briefly revert its prediction
+            final int ackSequence = wrapper.read(Types.VAR_INT);
+            final com.viaversion.viaversion.api.connection.UserConnection ackUser = wrapper.user();
+            ackUser.getChannel().eventLoop().schedule(() -> PacketFactory.sendJavaBlockChangedAck(ackUser, ackSequence), 250, java.util.concurrent.TimeUnit.MILLISECONDS);
 
             // The player can only interact using the main hand on Bedrock!
             if (hand != InteractionHand.MAIN_HAND) {

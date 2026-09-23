@@ -205,6 +205,7 @@ public class InventoryPackets {
                 final PacketWrapper acceptedCursorPacket = PacketWrapper.create(ClientboundPackets26_1.SET_CURSOR_ITEM, wrapper.user());
                 acceptedCursorPacket.write(VersionedTypes.V26_2.item, inventoryTracker.getHudContainer().getJavaItem(0)); // cursor item
                 acceptedCursorPacket.send(BedrockProtocol.class);
+                drainQueuedClicks(wrapper.user(), inventoryTracker);
                 return;
             }
             inventoryTracker.takePendingItemStackRequest(response.requestId());
@@ -218,6 +219,7 @@ public class InventoryPackets {
             final PacketWrapper cursorPacket = PacketWrapper.create(ClientboundPackets26_1.SET_CURSOR_ITEM, wrapper.user());
             cursorPacket.write(VersionedTypes.V26_2.item, inventoryTracker.getHudContainer().getJavaItem(0)); // cursor item
             cursorPacket.send(BedrockProtocol.class);
+            inventoryTracker.queuedClicks().clear(); // Queued clicks were built on the rejected state
         });
         protocol.registerClientbound(ClientboundBedrockPackets.CONTAINER_SET_DATA, ClientboundPackets26_1.CONTAINER_SET_DATA, wrapper -> {
             final int containerId = wrapper.read(Types.UNSIGNED_BYTE); // container id
@@ -641,47 +643,12 @@ public class InventoryPackets {
                 return;
             }
             final ContainerInput action = containerInputs[actionOrdinal];
-
-            if (inventoryTracker.getPendingCloseContainer() != null) {
+            if (inventoryTracker.hasPendingItemStackRequests()) {
+                // Wait for the server to confirm the previous move, otherwise this click is built on a stale cursor
+                inventoryTracker.queuedClicks().add(new QueuedClick(containerId, revision, slot, button, action));
                 return;
             }
-            final Container container = inventoryTracker.getContainerServerbound((byte) containerId);
-            if (container == null) {
-                if (containerId == ContainerID.CONTAINER_ID_INVENTORY.getValue()) {
-                    // Bedrock client can send multiple OpenInventory requests if the server doesn't respond, so this is fine here
-                    final PacketWrapper interact = PacketWrapper.create(ServerboundBedrockPackets.INTERACT, wrapper.user());
-                    interact.write(Types.UNSIGNED_BYTE, (short) InteractPacketPayload_Action.OpenInventory.getValue()); // action
-                    interact.write(BedrockTypes.UNSIGNED_VAR_LONG, wrapper.user().get(EntityTracker.class).getClientPlayer().runtimeId()); // target entity runtime id
-                    interact.write(BedrockTypes.OPTIONAL_POSITION_3F, null); // position
-                    interact.sendToServer(BedrockProtocol.class);
-                    ViaBedrock.getPlatform().getLogger().log(Level.INFO, "Sent INTERACT OpenInventory to the server");
-                    PacketFactory.sendJavaContainerSetContent(wrapper.user(), inventoryTracker.getInventoryContainer());
-                }
-                return;
-            }
-
-            final List<ItemStackRequestAction> actions;
-            final BedrockItem trackedCursor = inventoryTracker.getHudContainer().getItem(0);
-            ViaBedrock.getPlatform().getLogger().log(Level.INFO, "Container click: container=" + container.type() + " slot=" + slot + " button=" + button + " action=" + action + " serverAuthoritative=" + gameSession.isInventoryServerAuthoritative() + " trackedCursor=" + (trackedCursor == null || trackedCursor.isEmpty() ? "empty" : trackedCursor.identifier() + " x" + trackedCursor.amount() + " netId=" + trackedCursor.netId()));
-            if (gameSession.isInventoryServerAuthoritative()) {
-                actions = buildItemStackRequestActions(inventoryTracker, container, slot, button, action);
-            } else {
-                // Client-authoritative: clicks are communicated with legacy inventory transactions
-                actions = null;
-                if (!translateClickToInventoryTransaction(wrapper.user(), inventoryTracker, container, slot, button, action)) {
-                    resyncClick(wrapper.user(), inventoryTracker, container);
-                }
-            }
-            if (actions != null && !actions.isEmpty()) {
-                final ItemStackRequest request = new ItemStackRequest(inventoryTracker.nextItemStackRequestId(), actions, new ArrayList<>(), 0);
-                ViaBedrock.getPlatform().getLogger().log(Level.INFO, "Item stack request: id=" + request.requestId() + " actions=" + actions);
-                inventoryTracker.trackItemStackRequest(request.requestId(), actions, snapshotSources(inventoryTracker, actions));
-                final PacketWrapper requestPacket = PacketWrapper.create(ServerboundBedrockPackets.ITEM_STACK_REQUEST, wrapper.user());
-                requestPacket.write(BedrockTypes.ITEM_STACK_REQUEST, request);
-                requestPacket.sendToServer(BedrockProtocol.class);
-            } else if (gameSession.isInventoryServerAuthoritative() && actions == null) {
-                resyncClick(wrapper.user(), inventoryTracker, container);
-            }
+            processContainerClick(wrapper.user(), containerId, revision, slot, button, action);
         });
         protocol.registerServerbound(ServerboundPackets26_1.SET_CREATIVE_MODE_SLOT, null, wrapper -> {
             wrapper.cancel();
@@ -1311,6 +1278,15 @@ public class InventoryPackets {
                     candidateItems.add(inventory.getItem(i));
                 }
             }
+        } else if (isFurnaceType(viewContainer.type()) && sourceIndex != 2) { // Furnace input/fuel -> player inventory: Java fills main inventory first, then the hotbar
+            for (int i = 9; i < 36; i++) {
+                candidates.add(playerInventorySlot(inventoryTracker, i));
+                candidateItems.add(inventory.getItem(i));
+            }
+            for (int i = 0; i < 9; i++) {
+                candidates.add(playerInventorySlot(inventoryTracker, i));
+                candidateItems.add(inventory.getItem(i));
+            }
         } else { // Open container -> player inventory, in Java's order: hotbar right to left, then main inventory bottom-right to top-left
             for (int i = 8; i >= 0; i--) {
                 candidates.add(playerInventorySlot(inventoryTracker, i));
@@ -1392,6 +1368,63 @@ public class InventoryPackets {
             };
         }
         return type == ContainerType.CRAFTER ? ContainerEnumName.CrafterLevelEntityContainer : ContainerEnumName.LevelEntityContainer;
+    }
+
+
+    private record QueuedClick(int containerId, int revision, short slot, byte button, ContainerInput action) {
+    }
+
+    private static void drainQueuedClicks(final UserConnection user, final InventoryTracker inventoryTracker) {
+        while (!inventoryTracker.queuedClicks().isEmpty() && !inventoryTracker.hasPendingItemStackRequests()) {
+            final QueuedClick click = (QueuedClick) inventoryTracker.queuedClicks().poll();
+            processContainerClick(user, click.containerId(), click.revision(), click.slot(), click.button(), click.action());
+        }
+    }
+
+    private static void processContainerClick(final UserConnection user, final int containerId, final int revision, final short slot, final byte button, final ContainerInput action) {
+        final GameSessionStorage gameSession = user.get(GameSessionStorage.class);
+        final InventoryTracker inventoryTracker = user.get(InventoryTracker.class);
+
+        if (inventoryTracker.getPendingCloseContainer() != null) {
+            return;
+        }
+        final Container container = inventoryTracker.getContainerServerbound((byte) containerId);
+        if (container == null) {
+            if (containerId == ContainerID.CONTAINER_ID_INVENTORY.getValue()) {
+                // Bedrock client can send multiple OpenInventory requests if the server doesn't respond, so this is fine here
+                final PacketWrapper interact = PacketWrapper.create(ServerboundBedrockPackets.INTERACT, user);
+                interact.write(Types.UNSIGNED_BYTE, (short) InteractPacketPayload_Action.OpenInventory.getValue()); // action
+                interact.write(BedrockTypes.UNSIGNED_VAR_LONG, user.get(EntityTracker.class).getClientPlayer().runtimeId()); // target entity runtime id
+                interact.write(BedrockTypes.OPTIONAL_POSITION_3F, null); // position
+                interact.sendToServer(BedrockProtocol.class);
+                ViaBedrock.getPlatform().getLogger().log(Level.INFO, "Sent INTERACT OpenInventory to the server");
+                PacketFactory.sendJavaContainerSetContent(user, inventoryTracker.getInventoryContainer());
+            }
+            return;
+        }
+
+        final List<ItemStackRequestAction> actions;
+        final BedrockItem trackedCursor = inventoryTracker.getHudContainer().getItem(0);
+        ViaBedrock.getPlatform().getLogger().log(Level.INFO, "Container click: container=" + container.type() + " slot=" + slot + " button=" + button + " action=" + action + " serverAuthoritative=" + gameSession.isInventoryServerAuthoritative() + " trackedCursor=" + (trackedCursor == null || trackedCursor.isEmpty() ? "empty" : trackedCursor.identifier() + " x" + trackedCursor.amount() + " netId=" + trackedCursor.netId()));
+        if (gameSession.isInventoryServerAuthoritative()) {
+            actions = buildItemStackRequestActions(inventoryTracker, container, slot, button, action);
+        } else {
+            // Client-authoritative: clicks are communicated with legacy inventory transactions
+            actions = null;
+            if (!translateClickToInventoryTransaction(user, inventoryTracker, container, slot, button, action)) {
+                resyncClick(user, inventoryTracker, container);
+            }
+        }
+        if (actions != null && !actions.isEmpty()) {
+            final ItemStackRequest request = new ItemStackRequest(inventoryTracker.nextItemStackRequestId(), actions, new ArrayList<>(), 0);
+            ViaBedrock.getPlatform().getLogger().log(Level.INFO, "Item stack request: id=" + request.requestId() + " actions=" + actions);
+            inventoryTracker.trackItemStackRequest(request.requestId(), actions, snapshotSources(inventoryTracker, actions));
+            final PacketWrapper requestPacket = PacketWrapper.create(ServerboundBedrockPackets.ITEM_STACK_REQUEST, user);
+            requestPacket.write(BedrockTypes.ITEM_STACK_REQUEST, request);
+            requestPacket.sendToServer(BedrockProtocol.class);
+        } else if (gameSession.isInventoryServerAuthoritative() && actions == null) {
+            resyncClick(user, inventoryTracker, container);
+        }
     }
 
 }

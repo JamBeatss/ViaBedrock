@@ -75,13 +75,25 @@ public class InventoryTracker extends StoredObject {
     /**
      * Allocates the next item stack request id. The Bedrock server expects strictly increasing ids.
      */
-    public record PendingItemStackRequest(java.util.List<net.raphimc.viabedrock.protocol.model.inventory.ItemStackRequestAction> actions, java.util.List<net.raphimc.viabedrock.protocol.model.BedrockItem> sourceSnapshots) {
+    public record PendingItemStackRequest(java.util.List<net.raphimc.viabedrock.protocol.model.inventory.ItemStackRequestAction> actions, java.util.List<net.raphimc.viabedrock.protocol.model.BedrockItem> sourceSnapshots, long sentAt) {
+    }
+
+    private final java.util.ArrayDeque<Object> queuedClicks = new java.util.ArrayDeque<>();
+
+    public java.util.ArrayDeque<Object> queuedClicks() {
+        return this.queuedClicks;
+    }
+
+    public boolean hasPendingItemStackRequests() {
+        final long now = System.currentTimeMillis();
+        this.pendingItemStackRequests.values().removeIf(pending -> now - pending.sentAt() > 1500); // Never block clicks on a lost response
+        return !this.pendingItemStackRequests.isEmpty();
     }
 
     private final java.util.Map<Integer, PendingItemStackRequest> pendingItemStackRequests = new java.util.HashMap<>();
 
     public void trackItemStackRequest(final int requestId, final java.util.List<net.raphimc.viabedrock.protocol.model.inventory.ItemStackRequestAction> actions, final java.util.List<net.raphimc.viabedrock.protocol.model.BedrockItem> sourceSnapshots) {
-        this.pendingItemStackRequests.put(requestId, new PendingItemStackRequest(actions, sourceSnapshots));
+        this.pendingItemStackRequests.put(requestId, new PendingItemStackRequest(actions, sourceSnapshots, System.currentTimeMillis()));
     }
 
     public PendingItemStackRequest takePendingItemStackRequest(final int requestId) {
