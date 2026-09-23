@@ -303,8 +303,9 @@ public class InventoryPackets {
                         wrapper.read(BedrockTypes.UUID); // uuid
                         final String tag = wrapper.read(BedrockTypes.STRING); // crafting tag
                         wrapper.read(BedrockTypes.VAR_INT); // priority
+                        boolean assumeSymmetry = false;
                         if (shaped) {
-                            wrapper.read(Types.BOOLEAN); // assume symmetry
+                            assumeSymmetry = wrapper.read(Types.BOOLEAN); // assume symmetry (the mirrored arrangement also crafts)
                         }
                         if (wrapper.read(Types.BOOLEAN)) { // has unlocking requirement
                             wrapper.read(BedrockTypes.VAR_INT); // unlocking context
@@ -317,16 +318,19 @@ public class InventoryPackets {
                         }
                         final int netId = wrapper.read(BedrockTypes.UNSIGNED_VAR_INT); // recipe net id
                         if (!result.isEmpty() && (tag.equals("crafting_table") || tag.equals("deprecated"))) {
-                            recipes.add(new InventoryTracker.Recipe(netId, tag, shaped, width, height, ingredients, result));
+                            recipes.add(new InventoryTracker.Recipe(netId, tag, shaped, width, height, ingredients, result, assumeSymmetry));
                         }
                     }
                 }
             } catch (Throwable e) {
-                ViaBedrock.getPlatform().getLogger().log(Level.WARNING, "Failed to read crafting recipes (" + recipes.size() + " read so far)", e);
+                ViaBedrock.getPlatform().getLogger().log(Level.WARNING, "Failed to read crafting recipes (" + recipes.size() + " read so far" + (recipes.isEmpty() ? "" : ", last: " + recipes.get(recipes.size() - 1)) + ")", e);
             }
             inventoryTracker.recipes().clear();
             inventoryTracker.recipes().addAll(recipes);
             ViaBedrock.getPlatform().getLogger().log(Level.INFO, "Loaded " + recipes.size() + " crafting recipes");
+            for (int i = 0; i < Math.min(3, recipes.size()); i++) { // Sample for verifying the ingredient reader against real data
+                ViaBedrock.getPlatform().getLogger().log(Level.INFO, "Recipe sample: " + recipes.get(i));
+            }
         });
         protocol.registerClientbound(ClientboundBedrockPackets.CREATIVE_CONTENT, null, wrapper -> {
             wrapper.cancel();
@@ -712,6 +716,9 @@ public class InventoryPackets {
                 return;
             }
             final ContainerInput action = containerInputs[actionOrdinal];
+            if (!inventoryTracker.hasPendingItemStackRequests()) {
+                drainQueuedClicks(wrapper.user(), inventoryTracker); // Clicks queued behind a request whose response never came
+            }
             if (inventoryTracker.hasPendingItemStackRequests()) {
                 // Wait for the server to confirm the previous move, otherwise this click is built on a stale cursor
                 inventoryTracker.queuedClicks().add(new QueuedClick(containerId, revision, slot, button, action));
@@ -1639,7 +1646,7 @@ public class InventoryPackets {
         for (InventoryTracker.Recipe recipe : inventoryTracker.recipes()) {
             if (recipe.shaped()) {
                 if (recipe.width() != boxWidth || recipe.height() != boxHeight) continue;
-                for (int mirror = 0; mirror < 2; mirror++) {
+                for (int mirror = 0; mirror < (recipe.assumeSymmetry() ? 2 : 1); mirror++) {
                     boolean ok = true;
                     for (int y = 0; y < boxHeight && ok; y++) {
                         for (int x = 0; x < boxWidth && ok; x++) {

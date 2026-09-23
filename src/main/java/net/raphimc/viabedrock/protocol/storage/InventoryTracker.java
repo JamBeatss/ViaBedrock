@@ -83,7 +83,7 @@ public class InventoryTracker extends StoredObject {
     public record Ingredient(int kind, String value, int aux, int count) { // kind: 0 empty, 1 item id, 2 item tag, 3 unsupported
     }
 
-    public record Recipe(int netId, String tag, boolean shaped, int width, int height, java.util.List<Ingredient> ingredients, net.raphimc.viabedrock.protocol.model.BedrockItem result) {
+    public record Recipe(int netId, String tag, boolean shaped, int width, int height, java.util.List<Ingredient> ingredients, net.raphimc.viabedrock.protocol.model.BedrockItem result, boolean assumeSymmetry) {
     }
 
     private final java.util.List<Recipe> recipes = new java.util.ArrayList<>();
@@ -116,18 +116,33 @@ public class InventoryTracker extends StoredObject {
 
     public boolean hasPendingItemStackRequests() {
         final long now = System.currentTimeMillis();
-        this.pendingItemStackRequests.values().removeIf(pending -> now - pending.sentAt() > 1500); // Never block clicks on a lost response
+        // Never block clicks on a lost response, but keep the expired request so a late response can still be applied
+        final java.util.Iterator<java.util.Map.Entry<Integer, PendingItemStackRequest>> iterator = this.pendingItemStackRequests.entrySet().iterator();
+        while (iterator.hasNext()) {
+            final java.util.Map.Entry<Integer, PendingItemStackRequest> entry = iterator.next();
+            if (now - entry.getValue().sentAt() > 1500) {
+                this.expiredItemStackRequests.put(entry.getKey(), entry.getValue());
+                iterator.remove();
+            }
+        }
         return !this.pendingItemStackRequests.isEmpty();
     }
 
     private final java.util.Map<Integer, PendingItemStackRequest> pendingItemStackRequests = new java.util.HashMap<>();
+    private final java.util.Map<Integer, PendingItemStackRequest> expiredItemStackRequests = new java.util.LinkedHashMap<>() {
+        @Override
+        protected boolean removeEldestEntry(final java.util.Map.Entry<Integer, PendingItemStackRequest> eldest) {
+            return this.size() > 16;
+        }
+    };
 
     public void trackItemStackRequest(final int requestId, final java.util.List<net.raphimc.viabedrock.protocol.model.inventory.ItemStackRequestAction> actions, final java.util.List<net.raphimc.viabedrock.protocol.model.BedrockItem> sourceSnapshots) {
         this.pendingItemStackRequests.put(requestId, new PendingItemStackRequest(actions, sourceSnapshots, System.currentTimeMillis()));
     }
 
     public PendingItemStackRequest takePendingItemStackRequest(final int requestId) {
-        return this.pendingItemStackRequests.remove(requestId);
+        final PendingItemStackRequest pending = this.pendingItemStackRequests.remove(requestId);
+        return pending != null ? pending : this.expiredItemStackRequests.remove(requestId);
     }
 
     public int nextItemStackRequestId() {
@@ -216,6 +231,7 @@ public class InventoryTracker extends StoredObject {
             this.currentContainer = null;
         }
         this.pendingCloseContainer = container;
+        this.queuedClicks.clear(); // Queued clicks belong to the closed container
     }
 
     public void setCurrentContainerClosed(final boolean serverInitiated) {
@@ -224,6 +240,7 @@ public class InventoryTracker extends StoredObject {
         }
         this.currentContainer = null;
         this.pendingCloseContainer = null;
+        this.queuedClicks.clear();
     }
 
     public void closeCurrentForm() {
@@ -296,6 +313,7 @@ public class InventoryTracker extends StoredObject {
             throw new IllegalStateException("There is already another container open");
         }
         this.currentContainer = container;
+        this.queuedClicks.clear(); // Never replay a click against a newly opened container that reuses the id
     }
 
     public Container getPendingCloseContainer() {
