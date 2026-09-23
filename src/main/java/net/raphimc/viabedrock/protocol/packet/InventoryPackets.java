@@ -297,27 +297,34 @@ public class InventoryPackets {
                     wrapper.cancel();
                     return;
                 }
-                case CONTAINER -> container = new ChestContainer(wrapper.user(), containerId, title, position, 27);
+                case CONTAINER -> {
+                    int size = 27;
+                    final BedrockBlockEntity chestBlockEntity = chunkTracker.getBlockEntity(position);
+                    if (chestBlockEntity != null && chestBlockEntity.tag() != null && (chestBlockEntity.tag().contains("pairx") || chestBlockEntity.tag().contains("pairz"))) {
+                        size = 54; // Double chest
+                    }
+                    container = new ChestContainer(wrapper.user(), containerId, title, position, size);
+                }
                 case MINECART_CHEST, CHEST_BOAT -> container = new SimpleContainer(wrapper.user(), containerId, type, title, position, 27);
-                case WORKBENCH -> container = new SimpleContainer(wrapper.user(), containerId, type, title, position, 9, 1, "CRAFTING_TABLE"); // Java slot 0 is the result slot
-                case CRAFTER -> container = new SimpleContainer(wrapper.user(), containerId, type, title, position, 10, "CRAFTER");
-                case FURNACE -> container = new SimpleContainer(wrapper.user(), containerId, type, title, position, 3, "FURNACE");
-                case BLAST_FURNACE -> container = new SimpleContainer(wrapper.user(), containerId, type, title, position, 3, "BLAST_FURNACE");
-                case SMOKER -> container = new SimpleContainer(wrapper.user(), containerId, type, title, position, 3, "SMOKER");
-                case ANVIL -> container = new SimpleContainer(wrapper.user(), containerId, type, title, position, 3, "ANVIL");
-                case GRINDSTONE -> container = new SimpleContainer(wrapper.user(), containerId, type, title, position, 3, "GRINDSTONE");
-                case ENCHANTMENT -> container = new SimpleContainer(wrapper.user(), containerId, type, title, position, 2, "ENCHANTING_TABLE");
-                case BREWING_STAND -> container = new SimpleContainer(wrapper.user(), containerId, type, title, position, 5, "BREWING_STAND");
-                case DISPENSER -> container = new SimpleContainer(wrapper.user(), containerId, type, title, position, 9, "DISPENSER");
-                case DROPPER -> container = new SimpleContainer(wrapper.user(), containerId, type, title, position, 9, "DROPPER");
-                case HOPPER, MINECART_HOPPER -> container = new SimpleContainer(wrapper.user(), containerId, type, title, position, 5, "HOPPER");
-                case BEACON -> container = new SimpleContainer(wrapper.user(), containerId, type, title, position, 1, "BEACON");
+                case WORKBENCH -> container = new SimpleContainer(wrapper.user(), containerId, type, title, position, 9, 1, blockTags("crafting_table")); // Java slot 0 is the result slot
+                case CRAFTER -> container = new SimpleContainer(wrapper.user(), containerId, type, title, position, 10, blockTags("crafter"));
+                case FURNACE -> container = new SimpleContainer(wrapper.user(), containerId, type, title, position, 3, blockTags("furnace"));
+                case BLAST_FURNACE -> container = new SimpleContainer(wrapper.user(), containerId, type, title, position, 3, blockTags("blast_furnace"));
+                case SMOKER -> container = new SimpleContainer(wrapper.user(), containerId, type, title, position, 3, blockTags("smoker"));
+                case ANVIL -> container = new SimpleContainer(wrapper.user(), containerId, type, title, position, 3, blockTags("anvil"));
+                case GRINDSTONE -> container = new SimpleContainer(wrapper.user(), containerId, type, title, position, 3, blockTags("grindstone"));
+                case ENCHANTMENT -> container = new SimpleContainer(wrapper.user(), containerId, type, title, position, 2, blockTags("enchanting_table"));
+                case BREWING_STAND -> container = new SimpleContainer(wrapper.user(), containerId, type, title, position, 5, blockTags("brewing_stand"));
+                case DISPENSER -> container = new SimpleContainer(wrapper.user(), containerId, type, title, position, 9, blockTags("dispenser"));
+                case DROPPER -> container = new SimpleContainer(wrapper.user(), containerId, type, title, position, 9, blockTags("dropper"));
+                case HOPPER, MINECART_HOPPER -> container = new SimpleContainer(wrapper.user(), containerId, type, title, position, 5, blockTags("hopper"));
+                case BEACON -> container = new SimpleContainer(wrapper.user(), containerId, type, title, position, 1, blockTags("beacon"));
                 case TRADE -> container = new SimpleContainer(wrapper.user(), containerId, type, title, position, 3);
-                case LOOM -> container = new SimpleContainer(wrapper.user(), containerId, type, title, position, 4, "LOOM");
-                case LECTERN -> container = new SimpleContainer(wrapper.user(), containerId, type, title, position, 1, "LECTERN");
-                case STONECUTTER -> container = new SimpleContainer(wrapper.user(), containerId, type, title, position, 2, "STONECUTTER");
-                case CARTOGRAPHY -> container = new SimpleContainer(wrapper.user(), containerId, type, title, position, 3, "CARTOGRAPHY_TABLE");
-                case SMITHING_TABLE -> container = new SimpleContainer(wrapper.user(), containerId, type, title, position, 4, "SMITHING_TABLE");
+                case LOOM -> container = new SimpleContainer(wrapper.user(), containerId, type, title, position, 4, blockTags("loom"));
+                case LECTERN -> container = new SimpleContainer(wrapper.user(), containerId, type, title, position, 1, blockTags("lectern"));
+                case STONECUTTER -> container = new SimpleContainer(wrapper.user(), containerId, type, title, position, 2, blockTags("stonecutter"));
+                case CARTOGRAPHY -> container = new SimpleContainer(wrapper.user(), containerId, type, title, position, 3, blockTags("cartography_table"));
+                case SMITHING_TABLE -> container = new SimpleContainer(wrapper.user(), containerId, type, title, position, 4, blockTags("smithing_table"));
                 case NONE, CAULDRON, JUKEBOX, ARMOR, HAND, HUD, DECORATED_POT -> { // Bedrock client can't open these containers
                     wrapper.cancel();
                     return;
@@ -332,7 +339,11 @@ public class InventoryPackets {
             inventoryTracker.setCurrentContainer(container);
 
             wrapper.write(Types.VAR_INT, (int) containerId); // container id
-            wrapper.write(Types.VAR_INT, BedrockProtocol.MAPPINGS.getBedrockToJavaContainers().get(type)); // type
+            int javaMenuType = BedrockProtocol.MAPPINGS.getBedrockToJavaContainers().get(type);
+            if (type == ContainerType.CONTAINER && container.size() == 54) {
+                javaMenuType += 3; // generic_9x3 -> generic_9x6 (Java menu registry order)
+            }
+            wrapper.write(Types.VAR_INT, javaMenuType); // type
             wrapper.write(Types.TAG, TextUtil.textComponentToNbt(title)); // title
         });
         protocol.registerClientbound(ClientboundBedrockPackets.CONTAINER_CLOSE, ClientboundPackets26_1.CONTAINER_CLOSE, new PacketHandlers() {
@@ -1083,6 +1094,17 @@ public class InventoryPackets {
         transactionPacket.write(user.get(InventoryTransactionRewriter.class).getInventoryTransactionType(), inventoryTransaction);
         transactionPacket.sendToServer(BedrockProtocol.class);
         return true;
+    }
+
+
+    private static String[] blockTags(final String... tags) {
+        final java.util.List<String> known = new java.util.ArrayList<>();
+        for (String tag : tags) {
+            if (BedrockProtocol.MAPPINGS.getBedrockCustomBlockTags().containsValue(tag)) {
+                known.add(tag);
+            }
+        }
+        return known.toArray(new String[0]);
     }
 
 }

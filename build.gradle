@@ -93,3 +93,9 @@ tasks.register("genBedrockEnums", JavaExec) {
     systemProperty "protocolDocsEnums", project.findProperty("protocolDocsEnums") ?: ""
     workingDir = projectDir
 }
+
+tasks.register("genMappingData", JavaExec) {
+    classpath = sourceSets.tool.runtimeClasspath
+    mainClass = "net.raphimc.viabedrock.tool.generator.MappingDataGenerator"
+    workingDir = projectDir
+}
