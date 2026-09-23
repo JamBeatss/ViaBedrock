@@ -128,6 +128,7 @@ public class PacketFactory {
     }
 
     public static void sendBedrockContainerClose(final UserConnection user, final byte containerId, final ContainerType containerType) {
+        net.raphimc.viabedrock.ViaBedrock.getPlatform().getLogger().log(java.util.logging.Level.INFO, "Sending CONTAINER_CLOSE to server: id=" + containerId);
         final PacketWrapper containerClose = PacketWrapper.create(ServerboundBedrockPackets.CONTAINER_CLOSE, user);
         containerClose.write(Types.BYTE, containerId); // container id
         containerClose.write(Types.BYTE, (byte) containerType.getValue()); // type

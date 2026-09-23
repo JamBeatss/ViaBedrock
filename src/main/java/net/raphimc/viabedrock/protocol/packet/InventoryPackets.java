@@ -279,6 +279,7 @@ public class InventoryPackets {
             }
             final BlockPosition position = wrapper.read(BedrockTypes.BLOCK_POSITION); // position
             wrapper.read(BedrockTypes.VAR_LONG); // entity unique id
+            ViaBedrock.getPlatform().getLogger().log(Level.INFO, "CONTAINER_OPEN from server: id=" + containerId + " type=" + type + " position=" + position);
 
             if (inventoryTracker.isAnyScreenOpen()) {
                 ViaBedrock.getPlatform().getLogger().log(Level.WARNING, "Server tried to open container while another container is open");
@@ -355,6 +356,7 @@ public class InventoryPackets {
                 handler(wrapper -> {
                     final ContainerType containerType = ContainerType.getByValue(wrapper.read(Types.BYTE)); // type
                     final boolean serverInitiated = wrapper.read(Types.BOOLEAN); // server initiated
+                    ViaBedrock.getPlatform().getLogger().log(Level.INFO, "CONTAINER_CLOSE from server: id=" + wrapper.get(Types.VAR_INT, 0) + " type=" + containerType + " serverInitiated=" + serverInitiated);
 
                     final InventoryTracker inventoryTracker = wrapper.user().get(InventoryTracker.class);
                     final Container container = serverInitiated ? inventoryTracker.getCurrentContainer() : inventoryTracker.getPendingCloseContainer();
@@ -635,6 +637,7 @@ public class InventoryPackets {
                     interact.write(BedrockTypes.UNSIGNED_VAR_LONG, wrapper.user().get(EntityTracker.class).getClientPlayer().runtimeId()); // target entity runtime id
                     interact.write(BedrockTypes.OPTIONAL_POSITION_3F, null); // position
                     interact.sendToServer(BedrockProtocol.class);
+                    ViaBedrock.getPlatform().getLogger().log(Level.INFO, "Sent INTERACT OpenInventory to the server");
                     PacketFactory.sendJavaContainerSetContent(wrapper.user(), inventoryTracker.getInventoryContainer());
                 }
                 return;
