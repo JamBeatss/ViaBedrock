@@ -96,4 +96,17 @@ dependencies {
     toolImplementation "org.jsoup:jsoup:1.23.2"
     toolImplementation "org.ow2.asm:asm-tree:9.10.1"
     toolImplementation "net.lenni0451.commons:asm:1.9.2"
+
+    testImplementation platform("org.junit:junit-bom:5.14.2")
+    testImplementation "org.junit.jupiter:junit-jupiter"
+    testRuntimeOnly "org.junit.platform:junit-platform-launcher"
+}
+
+configurations {
+    // The protocol code is compiled against the platform's libraries (ViaVersion, Netty, ...); tests need them at runtime too
+    testImplementation.extendsFrom compileOnly
+}
+
+test {
+    useJUnitPlatform()
 }
