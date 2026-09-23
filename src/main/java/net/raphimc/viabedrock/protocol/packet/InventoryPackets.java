@@ -790,6 +790,7 @@ public class InventoryPackets {
                         return;
                     }
 
+                    returnCursorToInventory(wrapper.user(), inventoryTracker);
                     if (container.javaContainerId() != container.containerId()) {
                         wrapper.set(Types.BYTE, 0, container.containerId());
                     }
@@ -845,7 +846,27 @@ public class InventoryPackets {
      * Translates a Java container click into item stack request actions (server-auth inventory).
      * Returns null when the click can't be mapped and the containers need a resync instead.
      */
-    private static List<ItemStackRequestAction> buildItemStackRequestActions(final InventoryTracker inventoryTracker, final Container container, final int javaSlot, final byte button, final ContainerInput action) {
+    private static List<ItemStackRequestAction> buildItemStackRequestActions(final InventoryTracker inventoryTracker, final Container viewContainer, final int rawJavaSlot, final byte button, final ContainerInput action) {
+        final BedrockItem heldItem = inventoryTracker.getHudContainer().getItem(0);
+        if ((short) rawJavaSlot == -999) { // Click outside the window: throw the cursor item
+            if (action == ContainerInput.PICKUP && heldItem != null && !heldItem.isEmpty()) {
+                return List.of(ItemStackRequestAction.drop(button == 1 ? 1 : heldItem.amount(), cursorSlot(inventoryTracker), false));
+            }
+            return new ArrayList<>();
+        }
+        Container container = viewContainer;
+        int javaSlot = rawJavaSlot & 0xFFFF;
+        final boolean containerView = viewContainer.type() != ContainerType.INVENTORY && viewContainer != inventoryTracker.getInventoryContainer();
+        if (containerView) {
+            final int playerRegionStart = viewContainer.javaSlot(viewContainer.size() - 1) + 1;
+            if (javaSlot >= playerRegionStart && javaSlot < playerRegionStart + 36) {
+                container = inventoryTracker.getInventoryContainer();
+                javaSlot = javaSlot - playerRegionStart + 9; // Java player inventory slot numbering (9-35 main, 36-44 hotbar)
+            }
+        }
+        if (action == ContainerInput.QUICK_MOVE) {
+            return buildQuickMoveActions(inventoryTracker, viewContainer, container, javaSlot, containerView);
+        }
         final ItemStackRequestSlot source = requestSlotInfo(inventoryTracker, container, javaSlot & 0xFFFF);
         final ItemStackRequestSlot cursor = cursorSlot(inventoryTracker);
         final BedrockItem cursorItem = inventoryTracker.getHudContainer().getItem(0);
@@ -1239,6 +1260,110 @@ public class InventoryPackets {
                 }
             }
         }
+    }
+
+
+    private static ItemStackRequestSlot playerInventorySlot(final InventoryTracker inventoryTracker, final int bedrockIndex) {
+        final BedrockItem item = inventoryTracker.getInventoryContainer().getItem(bedrockIndex);
+        if (bedrockIndex < 9) {
+            return new ItemStackRequestSlot(new FullContainerName(ContainerEnumName.HotbarContainer, null), (byte) bedrockIndex, netIdOf(item));
+        }
+        return new ItemStackRequestSlot(new FullContainerName(ContainerEnumName.InventoryContainer, null), (byte) bedrockIndex, netIdOf(item));
+    }
+
+    private static List<ItemStackRequestAction> buildQuickMoveActions(final InventoryTracker inventoryTracker, final Container viewContainer, final Container clickedContainer, final int javaSlot, final boolean containerView) {
+        final Container inventory = inventoryTracker.getInventoryContainer();
+        final List<ItemStackRequestAction> actions = new ArrayList<>();
+        final int sourceIndex = clickedContainer.bedrockSlot(javaSlot);
+        if (sourceIndex < 0 || sourceIndex >= clickedContainer.size()) {
+            return null;
+        }
+        final BedrockItem moving = clickedContainer.getItem(sourceIndex);
+        if (moving == null || moving.isEmpty()) {
+            return actions;
+        }
+        final ItemStackRequestSlot source = clickedContainer == inventory ? playerInventorySlot(inventoryTracker, sourceIndex) : requestSlotInfo(inventoryTracker, clickedContainer, javaSlot);
+        if (source == null) {
+            return null;
+        }
+
+        // Destination candidates, in the order the client fills them
+        final List<ItemStackRequestSlot> candidates = new ArrayList<>();
+        final List<BedrockItem> candidateItems = new ArrayList<>();
+        if (clickedContainer == inventory && containerView) { // Player inventory -> open container
+            for (int i = 0; i < viewContainer.size(); i++) {
+                final ItemStackRequestSlot slot = requestSlotInfo(inventoryTracker, viewContainer, viewContainer.javaSlot(i));
+                if (slot != null) {
+                    candidates.add(slot);
+                    candidateItems.add(viewContainer.getItem(i));
+                }
+            }
+        } else if (clickedContainer == inventory) { // Inside the player inventory: hotbar <-> main inventory
+            if (sourceIndex < 9) {
+                for (int i = 9; i < 36; i++) {
+                    candidates.add(playerInventorySlot(inventoryTracker, i));
+                    candidateItems.add(inventory.getItem(i));
+                }
+            } else {
+                for (int i = 0; i < 9; i++) {
+                    candidates.add(playerInventorySlot(inventoryTracker, i));
+                    candidateItems.add(inventory.getItem(i));
+                }
+            }
+        } else { // Open container -> player inventory (hotbar first, then main inventory)
+            for (int i = 0; i < 36; i++) {
+                candidates.add(playerInventorySlot(inventoryTracker, i));
+                candidateItems.add(inventory.getItem(i));
+            }
+        }
+
+        int remaining = moving.amount();
+        final int maxStack = MAX_STACK_SIZE;
+        for (int i = 0; i < candidates.size() && remaining > 0; i++) { // Merge into matching stacks first
+            final BedrockItem existing = candidateItems.get(i);
+            if (existing != null && !existing.isEmpty() && !existing.isDifferent(moving) && existing.amount() < maxStack) {
+                final int amount = Math.min(remaining, maxStack - existing.amount());
+                actions.add(ItemStackRequestAction.place(amount, source, candidates.get(i)));
+                remaining -= amount;
+            }
+        }
+        for (int i = 0; i < candidates.size() && remaining > 0; i++) { // Then the first empty slot
+            final BedrockItem existing = candidateItems.get(i);
+            if (existing == null || existing.isEmpty()) {
+                actions.add(ItemStackRequestAction.place(remaining, source, candidates.get(i)));
+                remaining = 0;
+            }
+        }
+        return actions;
+    }
+
+    /**
+     * Returns the cursor item to the player inventory before a container closes (the Java client keeps it otherwise).
+     */
+    static void returnCursorToInventory(final UserConnection user, final InventoryTracker inventoryTracker) {
+        final BedrockItem held = inventoryTracker.getHudContainer().getItem(0);
+        if (held == null || held.isEmpty() || !user.get(GameSessionStorage.class).isInventoryServerAuthoritative()) {
+            return;
+        }
+        final Container inventory = inventoryTracker.getInventoryContainer();
+        int target = -1;
+        for (int i = 0; i < 36 && target == -1; i++) {
+            final BedrockItem existing = inventory.getItem(i);
+            if (existing != null && !existing.isEmpty() && !existing.isDifferent(held) && existing.amount() + held.amount() <= MAX_STACK_SIZE) target = i;
+        }
+        for (int i = 0; i < 36 && target == -1; i++) {
+            final BedrockItem existing = inventory.getItem(i);
+            if (existing == null || existing.isEmpty()) target = i;
+        }
+        final List<ItemStackRequestAction> actions = target == -1
+                ? List.of(ItemStackRequestAction.drop(held.amount(), cursorSlot(inventoryTracker), false))
+                : List.of(ItemStackRequestAction.place(held.amount(), cursorSlot(inventoryTracker), playerInventorySlot(inventoryTracker, target)));
+        final ItemStackRequest request = new ItemStackRequest(inventoryTracker.nextItemStackRequestId(), actions, new ArrayList<>(), 0);
+        ViaBedrock.getPlatform().getLogger().log(Level.INFO, "Item stack request (return cursor on close): id=" + request.requestId() + " actions=" + actions);
+        inventoryTracker.trackItemStackRequest(request.requestId(), actions, snapshotSources(inventoryTracker, actions));
+        final PacketWrapper requestPacket = PacketWrapper.create(ServerboundBedrockPackets.ITEM_STACK_REQUEST, user);
+        requestPacket.write(BedrockTypes.ITEM_STACK_REQUEST, request);
+        requestPacket.sendToServer(BedrockProtocol.class);
     }
 
 }
